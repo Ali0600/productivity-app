@@ -43,9 +43,13 @@ export const AppStateProvider = ({ children }) => {
         if (loadedMain !== null && Array.isArray(loadedMain)) {
           const migrated = loadedMain.map((ml) => {
             const msgs = Array.isArray(ml.notificationMessages) ? ml.notificationMessages : [];
-            const normalized = msgs.map((m) =>
-              typeof m === 'string' ? { body: m, rule: null } : m
-            );
+            const fallbackInterval = ml.notificationIntervalMinutes ?? 60;
+            const normalized = msgs.map((m) => {
+              const base = typeof m === 'string' ? { body: m, rule: null } : m;
+              return base.intervalMinutes != null
+                ? base
+                : { ...base, intervalMinutes: fallbackInterval };
+            });
             return { ...ml, notificationMessages: normalized };
           });
           setMainLists(migrated);
@@ -339,14 +343,6 @@ export const AppStateProvider = ({ children }) => {
     );
   }, []);
 
-  const setNotificationInterval = useCallback((mainListName, minutes) => {
-    setMainLists((prev) =>
-      prev.map((ml) =>
-        ml.name === mainListName ? { ...ml, notificationIntervalMinutes: minutes } : ml
-      )
-    );
-  }, []);
-
   const removeMainList = useCallback(
     (name) => {
       setMainLists((prev) => prev.filter((ml) => ml.name !== name));
@@ -409,7 +405,6 @@ export const AppStateProvider = ({ children }) => {
       switchMainList,
       exitToTileGrid,
       setNotificationMessages,
-      setNotificationInterval,
       lists,
       currentList,
       currentListData,
@@ -439,7 +434,6 @@ export const AppStateProvider = ({ children }) => {
       switchMainList,
       exitToTileGrid,
       setNotificationMessages,
-      setNotificationInterval,
       lists,
       currentList,
       currentListData,

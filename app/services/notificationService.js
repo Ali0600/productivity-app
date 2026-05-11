@@ -291,44 +291,61 @@ export default class NotificationService {
 
       const quiet = await this.getQuietHours();
       const baseTime = Date.now();
-      const MAX_CANDIDATES_PER_LIST = 200;
+      const MAX_CANDIDATES_PER_MESSAGE = 200;
       const MAX = this.MAX_SCHEDULED_NOTIFICATIONS;
 
       const allCandidates = [];
 
+      // Flatten messages across main lists so we can stagger same-interval groups.
+      const flatMessages = [];
       for (const ml of mainLists) {
         const messages = Array.isArray(ml.notificationMessages) ? ml.notificationMessages : [];
         if (messages.length === 0) continue;
-        const intervalMinutes = ml.notificationIntervalMinutes ?? 60;
+        const listFallbackMinutes = ml.notificationIntervalMinutes ?? 60;
+
+        for (const m of messages) {
+          const body = typeof m === 'string' ? m : m?.body;
+          if (!body) continue;
+          const rule = typeof m === 'string' ? null : m?.rule;
+          const armedAt = typeof m === 'string' ? null : m?.armedAt;
+          const intervalMinutes = (typeof m === 'string' ? null : m?.intervalMinutes) ?? listFallbackMinutes;
+          flatMessages.push({ ml, body, rule, armedAt, intervalMinutes });
+        }
+      }
+
+      // Within each same-interval group, offset messages by (idx / groupSize) * interval
+      // so two 60-min messages land 30 min apart instead of firing together.
+      const groupTotals = new Map();
+      for (const fm of flatMessages) {
+        groupTotals.set(fm.intervalMinutes, (groupTotals.get(fm.intervalMinutes) ?? 0) + 1);
+      }
+      const groupSeen = new Map();
+      for (const fm of flatMessages) {
+        const idx = groupSeen.get(fm.intervalMinutes) ?? 0;
+        const total = groupTotals.get(fm.intervalMinutes);
+        const intervalMs = fm.intervalMinutes * 60 * 1000;
+        fm.staggerOffsetMs = total > 1 ? Math.round((idx * intervalMs) / total) : 0;
+        groupSeen.set(fm.intervalMinutes, idx + 1);
+      }
+
+      for (const fm of flatMessages) {
+        const { ml, body, rule, armedAt, intervalMinutes, staggerOffsetMs } = fm;
         const intervalMs = intervalMinutes * 60 * 1000;
 
-        let scheduledFromList = 0;
+        let scheduledFromMessage = 0;
         let candidate = 0;
-        while (scheduledFromList < MAX && candidate < MAX_CANDIDATES_PER_LIST) {
+        while (scheduledFromMessage < MAX && candidate < MAX_CANDIDATES_PER_MESSAGE) {
           candidate += 1;
-          const triggerDate = new Date(baseTime + candidate * intervalMs);
+          const triggerDate = new Date(baseTime + staggerOffsetMs + candidate * intervalMs);
           if (quiet.enabled && isInQuietHours(triggerDate, quiet.startMinutes, quiet.endMinutes)) continue;
-
-          let pickedBody = null;
-          for (let attempt = 0; attempt < messages.length; attempt++) {
-            const m = messages[(scheduledFromList + attempt) % messages.length];
-            const body = typeof m === 'string' ? m : m?.body;
-            const rule = typeof m === 'string' ? null : m?.rule;
-            const armedAt = typeof m === 'string' ? null : m?.armedAt;
-            if (!body) continue;
-            if (!isRuleActive(rule, ml, triggerDate, armedAt)) {
-              pickedBody = body;
-              break;
-            }
-          }
-          if (!pickedBody) continue;
+          if (isRuleActive(rule, ml, triggerDate, armedAt)) continue;
 
           allCandidates.push({
             fireTime: triggerDate,
-            body: pickedBody,
+            body,
             sourceListName: ml.name,
           });
-          scheduledFromList += 1;
+          scheduledFromMessage += 1;
         }
       }
 

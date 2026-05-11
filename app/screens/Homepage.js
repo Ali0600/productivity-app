@@ -9,10 +9,13 @@ import Animated, {
     Easing,
 } from 'react-native-reanimated';
 import NotificationService from "../services/notificationService";
+import * as Sharing from 'expo-sharing';
+import { Paths, File } from 'expo-file-system';
+import * as Clipboard from 'expo-clipboard';
 import Task from "../components/Task";
 import List from "../components/List";
 import GlassCard from "../components/GlassCard";
-import IntervalSlider, { formatMinutes, formatTimeOfDay } from "../components/IntervalSlider";
+import IntervalSlider, { formatTimeOfDay } from "../components/IntervalSlider";
 
 const TIME_OF_DAY_VALUES = Array.from({ length: 48 }, (_, i) => i * 30);
 
@@ -98,12 +101,11 @@ function Homepage(props){
     const [newMessageText, setNewMessageText] = useState('');
     const [scheduledModalVisible, setScheduledModalVisible] = useState(false);
     const [scheduledList, setScheduledList] = useState([]);
-    const [intervalModalVisible, setIntervalModalVisible] = useState(false);
     const [quietHoursModalVisible, setQuietHoursModalVisible] = useState(false);
     const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
     const [quietHoursStart, setQuietHoursStart] = useState(0);
     const [quietHoursEnd, setQuietHoursEnd] = useState(480);
-    const [messageEditor, setMessageEditor] = useState({ visible: false, messageIndex: -1, draftBody: '', draftRule: null });
+    const [messageEditor, setMessageEditor] = useState({ visible: false, messageIndex: -1, draftBody: '', draftRule: null, draftInterval: 60 });
     const [taskEditor, setTaskEditor] = useState({
         visible: false,
         taskId: null,
@@ -140,7 +142,7 @@ function Homepage(props){
     // Use our custom hooks
     const { isLoading, error } = useAppLoading();
     const { lists, currentList, currentListData, addList, removeList, switchList, updateLists, moveSideList } = useLists();
-    const { mainLists, currentMainList, currentMainData, exitToTileGrid, setNotificationMessages, setNotificationInterval } = useMainLists();
+    const { mainLists, currentMainList, currentMainData, exitToTileGrid, setNotificationMessages } = useMainLists();
     const {
         addTaskToList,
         reorderTasksInList,
@@ -246,11 +248,6 @@ function Homepage(props){
         setActiveTags(new Set());
     }, [currentList]);
 
-    const currentInterval = useMemo(() => {
-        const ml = mainLists.find((m) => m.name === currentMainList);
-        return ml?.notificationIntervalMinutes ?? 60;
-    }, [mainLists, currentMainList]);
-
     const handleOpenMessages = useCallback(() => {
         setNewMessageText('');
         setMessagesModalVisible(true);
@@ -267,23 +264,6 @@ function Homepage(props){
     const persistAndReschedule = useCallback(async (next) => {
         setNotificationMessages(currentMainList, next);
     }, [currentMainList, setNotificationMessages]);
-
-    const handleOpenInterval = useCallback(() => {
-        tapLight();
-        setIntervalModalVisible(true);
-        setSettingsVisible(false);
-    }, []);
-
-    const handleCloseInterval = useCallback(() => {
-        tapLight();
-        setIntervalModalVisible(false);
-        setSettingsVisible(true);
-    }, []);
-
-    const handleIntervalChange = useCallback(async (minutes) => {
-        setNotificationInterval(currentMainList, minutes);
-        selection();
-    }, [currentMainList, setNotificationInterval]);
 
     const persistQuietHours = useCallback(async (next) => {
         await NotificationService.setQuietHours(next);
@@ -337,11 +317,12 @@ function Homepage(props){
         if (!trimmed) return;
         tapLight();
         setNewMessageText('');
+        const defaultInterval = currentMainData?.notificationIntervalMinutes ?? 60;
         await persistAndReschedule([
             ...currentMessages,
-            { body: trimmed, rule: null, armedAt: Date.now() },
+            { body: trimmed, rule: null, armedAt: Date.now(), intervalMinutes: defaultInterval },
         ]);
-    }, [newMessageText, currentMessages, persistAndReschedule]);
+    }, [newMessageText, currentMessages, persistAndReschedule, currentMainData]);
 
     const handleDeleteMessage = useCallback(async (idx) => {
         warning();
@@ -353,15 +334,17 @@ function Homepage(props){
         const msg = currentMessages[index];
         const body = typeof msg === 'string' ? msg : msg?.body ?? '';
         const rule = typeof msg === 'string' ? null : msg?.rule ?? null;
-        setMessageEditor({ visible: true, messageIndex: index, draftBody: body, draftRule: rule });
-    }, [currentMessages]);
+        const interval = (typeof msg === 'string' ? null : msg?.intervalMinutes)
+            ?? currentMainData?.notificationIntervalMinutes ?? 60;
+        setMessageEditor({ visible: true, messageIndex: index, draftBody: body, draftRule: rule, draftInterval: interval });
+    }, [currentMessages, currentMainData]);
 
     const handleCloseMessageEditor = useCallback(() => {
-        setMessageEditor({ visible: false, messageIndex: -1, draftBody: '', draftRule: null });
+        setMessageEditor({ visible: false, messageIndex: -1, draftBody: '', draftRule: null, draftInterval: 60 });
     }, []);
 
     const handleSaveMessage = useCallback(async () => {
-        const { messageIndex, draftBody, draftRule } = messageEditor;
+        const { messageIndex, draftBody, draftRule, draftInterval } = messageEditor;
         if (messageIndex < 0) {
             handleCloseMessageEditor();
             return;
@@ -380,7 +363,9 @@ function Homepage(props){
         const nextArmedAt = ruleChanged ? Date.now() : prevArmedAt;
 
         const next = currentMessages.map((m, i) =>
-            i === messageIndex ? { body: trimmed, rule: cleanRule, armedAt: nextArmedAt } : m
+            i === messageIndex
+                ? { body: trimmed, rule: cleanRule, armedAt: nextArmedAt, intervalMinutes: draftInterval }
+                : m
         );
         handleCloseMessageEditor();
         await persistAndReschedule(next);
@@ -526,6 +511,57 @@ function Homepage(props){
         const list = await NotificationService.getUpcomingNotifications();
         setScheduledList(list);
     }, []);
+
+    const handleExport = useCallback(() => {
+        tapLight();
+        const payload = {
+            app: 'ADHDone',
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            mainLists,
+        };
+        const json = JSON.stringify(payload, null, 2);
+        ActionSheetIOS.showActionSheetWithOptions(
+            {
+                title: 'Export ADHDone Data',
+                options: ['Copy as JSON', 'Save Backup File…', 'Cancel'],
+                cancelButtonIndex: 2,
+            },
+            async (idx) => {
+                if (idx === 0) {
+                    try {
+                        await Clipboard.setStringAsync(json);
+                        success();
+                        Alert.alert('Copied', 'Backup JSON copied to clipboard.');
+                    } catch (err) {
+                        console.error('Copy export failed:', err);
+                        Alert.alert('Copy failed', 'Could not copy backup to clipboard.');
+                    }
+                } else if (idx === 1) {
+                    try {
+                        const dateStamp = new Date().toISOString().slice(0, 10);
+                        const filename = `adhdone-backup-${dateStamp}.json`;
+                        const file = new File(Paths.cache, filename);
+                        if (file.exists) file.delete();
+                        file.create();
+                        file.write(json);
+                        if (!(await Sharing.isAvailableAsync())) {
+                            Alert.alert('Sharing unavailable', 'This device cannot share files.');
+                            return;
+                        }
+                        await Sharing.shareAsync(file.uri, {
+                            mimeType: 'application/json',
+                            UTI: 'public.json',
+                            dialogTitle: 'ADHDone Backup',
+                        });
+                    } catch (err) {
+                        console.error('File export failed:', err);
+                        Alert.alert('Export failed', 'Could not create backup file.');
+                    }
+                }
+            }
+        );
+    }, [mainLists]);
 
     const pulse = useSharedValue(0);
     useEffect(() => {
@@ -704,16 +740,6 @@ function Homepage(props){
                                 </TouchableOpacity>
                             ) : null}
 
-                            {currentMainList ? (
-                                <TouchableOpacity onPress={handleOpenInterval} style={styles.settingsRow}>
-                                    <Text style={styles.settingsRowLabel}>Reminder Interval</Text>
-                                    <View style={styles.settingsRowValue}>
-                                        <Text style={styles.settingsValueText}>{formatMinutes(currentInterval)}</Text>
-                                        <SymbolView name="chevron.right" size={20} tintColor="white" />
-                                    </View>
-                                </TouchableOpacity>
-                            ) : null}
-
                             <TouchableOpacity onPress={handleOpenQuietHours} style={styles.settingsRow}>
                                 <Text style={styles.settingsRowLabel}>Quiet Hours</Text>
                                 <View style={styles.settingsRowValue}>
@@ -729,6 +755,11 @@ function Homepage(props){
                             <TouchableOpacity onPress={handleOpenScheduled} style={styles.settingsRow}>
                                 <Text style={styles.settingsRowLabel}>View Scheduled</Text>
                                 <SymbolView name="chevron.right" size={20} tintColor="white" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity onPress={handleExport} style={styles.settingsRow}>
+                                <Text style={styles.settingsRowLabel}>Export Data</Text>
+                                <SymbolView name="square.and.arrow.up" size={20} tintColor="white" />
                             </TouchableOpacity>
                         </GlassCard>
 
@@ -847,6 +878,15 @@ function Homepage(props){
                                     placeholder="Reminder text"
                                     placeholderTextColor="rgba(255,255,255,0.5)"
                                     multiline
+                                />
+
+                                <Text style={styles.ruleSectionLabel}>Reminder interval</Text>
+                                <IntervalSlider
+                                    key={`msg-interval-${messageEditor.messageIndex}-${messageEditor.draftInterval}`}
+                                    value={messageEditor.draftInterval ?? 60}
+                                    onChangeComplete={(mins) =>
+                                        setMessageEditor((r) => ({ ...r, draftInterval: mins }))
+                                    }
                                 />
 
                                 <Text style={styles.ruleSectionLabel}>Pause rule</Text>
@@ -1311,36 +1351,6 @@ function Homepage(props){
                             >
                                 <TouchableOpacity onPress={() => setScheduledModalVisible(false)}>
                                     <SymbolView name="xmark.circle.fill" size={60} tintColor="white" />
-                                </TouchableOpacity>
-                            </GlassCard>
-                        </SafeAreaView>
-                    </Modal>
-
-                    <Modal visible={intervalModalVisible} animationType="slide" transparent={true}>
-                        <SafeAreaView style={{ flex: 1 }}>
-                            <GlassCard
-                                style={styles.modalContent}
-                                colorScheme="dark"
-                                tintColor="rgba(46, 46, 80, 0.45)"
-                            >
-                                <Text style={styles.settingsTitle}>Reminder Interval</Text>
-                                <Text style={styles.messagesSubtitle}>
-                                    How often "{currentMainList}" sends reminders.
-                                </Text>
-                                <IntervalSlider
-                                    key={`interval-${currentInterval}`}
-                                    value={currentInterval}
-                                    onChangeComplete={handleIntervalChange}
-                                />
-                            </GlassCard>
-
-                            <GlassCard
-                                style={styles.buttonWrapper}
-                                colorScheme="dark"
-                                tintColor="rgba(46, 46, 80, 0.45)"
-                            >
-                                <TouchableOpacity onPress={handleCloseInterval}>
-                                    <SymbolView name="checkmark.circle.fill" size={60} tintColor="white" />
                                 </TouchableOpacity>
                             </GlassCard>
                         </SafeAreaView>
