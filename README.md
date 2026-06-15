@@ -12,8 +12,6 @@ that nudges without nagging. Built with React Native + Expo and shipped to TestF
 
 ## Highlights
 
-Résumé-ready summaries of what's in here:
-
 - **Designed and shipped a notification engine** with per-message reminder intervals, "pause" rules
   (mute reminders once a task / list / main-list is completed for the day), quiet hours, and
   even staggering of same-interval messages — all within iOS's 64-scheduled-notification limit.
