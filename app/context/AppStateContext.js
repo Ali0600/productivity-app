@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useCallback, useMemo } from 'react';
 import StorageService from '../services/storageService';
 import NotificationService from '../services/notificationService';
+import { makeId } from '../utils/id';
 
 export const AppStateContext = createContext();
 
@@ -71,10 +72,14 @@ export const AppStateProvider = ({ children }) => {
   useEffect(() => {
     if (isLoading) return;
     const t = setTimeout(() => {
-      StorageService.saveMainLists(mainLists).catch((err) => {
-        console.error('Error saving mainLists:', err);
-        setError('Failed to save changes. Please try again.');
-      });
+      // storeData resolves false (not reject) on failure, so check the result;
+      // clear any stale error on success so the banner doesn't stick forever.
+      StorageService.saveMainLists(mainLists)
+        .then((ok) => setError(ok ? null : 'Failed to save changes. Please try again.'))
+        .catch((err) => {
+          console.error('Error saving mainLists:', err);
+          setError('Failed to save changes. Please try again.');
+        });
     }, 100);
     return () => clearTimeout(t);
   }, [mainLists, isLoading]);
@@ -106,7 +111,7 @@ export const AppStateProvider = ({ children }) => {
       if (!currentMainList) return;
       mutateSideList(currentMainList, listName, (sl) => ({
         ...sl,
-        tasks: [...sl.tasks, { id: task.id || `task-${Date.now()}`, ...task }],
+        tasks: [...sl.tasks, { ...task, id: task.id || makeId() }],
       }));
     },
     [currentMainList, mutateSideList]
@@ -235,21 +240,22 @@ export const AppStateProvider = ({ children }) => {
   // --- Side list ops (scoped to currentMainList) ---
   const addList = useCallback(
     (sideListName) => {
-      if (!currentMainList || !sideListName) return;
+      const trimmed = sideListName?.trim();
+      if (!currentMainList || !trimmed) return;
       setMainLists((prev) =>
         prev.map((ml) => {
           if (ml.name !== currentMainList) return ml;
-          if (ml.sideLists.some((sl) => sl.listName === sideListName)) return ml;
+          if (ml.sideLists.some((sl) => sl.listName === trimmed)) return ml;
           return {
             ...ml,
             sideLists: [
               ...ml.sideLists,
-              { listName: sideListName, tasks: [], lastCompletedAt: null },
+              { listName: trimmed, tasks: [], lastCompletedAt: null },
             ],
           };
         })
       );
-      if (!currentSideList) setCurrentSideList(sideListName);
+      if (!currentSideList) setCurrentSideList(trimmed);
     },
     [currentMainList, currentSideList]
   );
@@ -320,13 +326,14 @@ export const AppStateProvider = ({ children }) => {
 
   // --- Main list ops ---
   const addMainList = useCallback((name) => {
-    if (!name) return;
+    const trimmed = name?.trim();
+    if (!trimmed) return;
     setMainLists((prev) => {
-      if (prev.some((ml) => ml.name === name)) return prev;
+      if (prev.some((ml) => ml.name === trimmed)) return prev;
       return [
         ...prev,
         {
-          name,
+          name: trimmed,
           sideLists: [{ listName: 'Tasks', tasks: [], lastCompletedAt: null }],
           notificationMessages: [],
           notificationIntervalMinutes: 60,
@@ -356,12 +363,13 @@ export const AppStateProvider = ({ children }) => {
 
   const renameMainList = useCallback(
     (oldName, newName) => {
-      if (!newName || oldName === newName) return;
+      const trimmed = newName?.trim();
+      if (!trimmed || oldName === trimmed) return;
       setMainLists((prev) => {
-        if (prev.some((ml) => ml.name === newName)) return prev;
-        return prev.map((ml) => (ml.name === oldName ? { ...ml, name: newName } : ml));
+        if (prev.some((ml) => ml.name === trimmed)) return prev;
+        return prev.map((ml) => (ml.name === oldName ? { ...ml, name: trimmed } : ml));
       });
-      if (currentMainList === oldName) setCurrentMainList(newName);
+      if (currentMainList === oldName) setCurrentMainList(trimmed);
     },
     [currentMainList]
   );

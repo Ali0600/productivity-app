@@ -16,71 +16,6 @@ import Task from "../components/Task";
 import List from "../components/List";
 import GlassCard from "../components/GlassCard";
 import IntervalSlider, { formatTimeOfDay } from "../components/IntervalSlider";
-
-const TIME_OF_DAY_VALUES = Array.from({ length: 48 }, (_, i) => i * 30);
-
-const isRuleTargetMissing = (rule, mainData) => {
-    if (!rule || !mainData) return false;
-    if (rule.type === 'task') {
-        const sl = mainData.sideLists?.find((s) => s.listName === rule.sideListName);
-        return !sl || !sl.tasks?.some((t) => t.id === rule.taskId);
-    }
-    if (rule.type === 'sideList') {
-        return !mainData.sideLists?.some((s) => s.listName === rule.sideListName);
-    }
-    return false;
-};
-
-const isRuleCurrentlyActive = (rule, mainData) => {
-    if (!rule || !mainData) return false;
-    const now = Date.now();
-    const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
-    const inToday = (ts) => {
-        if (!ts) return false;
-        const t = new Date(ts).getTime();
-        return t >= dayStart.getTime() && t <= now;
-    };
-    if (rule.type === 'task') {
-        const sl = mainData.sideLists?.find((s) => s.listName === rule.sideListName);
-        const task = sl?.tasks?.find((t) => t.id === rule.taskId);
-        return inToday(task?.completedAt);
-    }
-    if (rule.type === 'sideList') {
-        const sl = mainData.sideLists?.find((s) => s.listName === rule.sideListName);
-        return inToday(sl?.lastCompletedAt);
-    }
-    if (rule.type === 'mainList') {
-        return (mainData.sideLists ?? []).some((sl) => inToday(sl.lastCompletedAt));
-    }
-    return false;
-};
-
-const rulesEqual = (a, b) => {
-    if (!a && !b) return true;
-    if (!a || !b) return false;
-    if (a.type !== b.type) return false;
-    if (a.type === 'task') return a.taskId === b.taskId && a.sideListName === b.sideListName;
-    if (a.type === 'sideList') return a.sideListName === b.sideListName;
-    if (a.type === 'mainList') return true;
-    return false;
-};
-
-const formatRuleChip = (rule, mainData) => {
-    if (!rule) return { label: '+ Add pause rule', tone: 'dim' };
-    if (isRuleTargetMissing(rule, mainData)) return { label: '⚠  Rule target missing', tone: 'warn' };
-    if (rule.type === 'task') {
-        const sl = mainData?.sideLists?.find((s) => s.listName === rule.sideListName);
-        const task = sl?.tasks?.find((t) => t.id === rule.taskId);
-        return { label: `⊘  Pause when "${task?.taskName ?? '…'}" is done`, tone: 'normal' };
-    }
-    if (rule.type === 'sideList') {
-        return { label: `⊘  Pause when "${rule.sideListName}" is done`, tone: 'normal' };
-    }
-    if (rule.type === 'mainList') {
-        return { label: '⊘  Pause when any task is done', tone: 'normal' };
-    }
-    return { label: '+ Add pause rule', tone: 'dim' };
-};
 import { SymbolView } from 'expo-symbols';
 import moment from "moment";
 import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
@@ -88,6 +23,11 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAppState, useLists, useListTasks, useAppLoading, useMainLists } from '../hooks/useAppState';
 import { tapLight, selection, warning, success } from '../services/haptics';
+import { log } from '../services/logger';
+import { makeId } from '../utils/id';
+import { isRuleCurrentlyActive, rulesEqual, formatRuleChip } from '../utils/notificationRules';
+
+const TIME_OF_DAY_VALUES = Array.from({ length: 48 }, (_, i) => i * 30);
 
 function Homepage(props){
     const [modalVisible, setModalVisible] = useState(false);
@@ -156,12 +96,12 @@ function Homepage(props){
         if (!task.trim()) return;
 
         const newTask = {
-            id: `task-${Date.now()}`, // Create a reliable unique ID
+            id: makeId(),
             taskName: task,
             creationTime: new Date()
         };
 
-        console.log("Adding new task:", newTask);
+        log("Adding new task:", newTask);
         tapLight();
         addTaskToList(newTask);
         setTask(''); // Clear input
@@ -174,7 +114,7 @@ function Homepage(props){
     }, [switchList]);
     
     const handleReorderLists = (reorderedLists) => {
-        console.log("Handling list reorder:", reorderedLists.map(l => l.listName));
+        log("Handling list reorder:", reorderedLists.map(l => l.listName));
         // Update the entire lists array in the context
         updateLists(reorderedLists);
     };
@@ -594,7 +534,7 @@ function Homepage(props){
         <View style={styles.container}>
             {isLoading ? (
                 <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#0000ff" />
+                    <ActivityIndicator size="large" color="#fff" />
                     <Text style={styles.loadingText}>Loading...</Text>
                 </View>
             ) : error ? (
@@ -663,7 +603,7 @@ function Homepage(props){
                                     data={lists}
                                     keyExtractor={(item) => item.listName}
                                     onDragEnd={({ data }) => {
-                                        console.log("Reordering lists:", data.map(l => l.listName));
+                                        log("Reordering lists:", data.map(l => l.listName));
                                         // Update the lists state directly in context
                                         // We need to add a function to handle this
                                         handleReorderLists(data);
@@ -783,7 +723,7 @@ function Homepage(props){
                                     tintColor="rgba(46, 46, 80, 0.45)"
                                 >
                                     <Text style={styles.settingsTitle}>
-                                        Messages for "{currentMainList}"
+                                        {`Messages for "${currentMainList}"`}
                                     </Text>
                                     <Text style={styles.messagesSubtitle}>
                                         Reminders cycle through these in order.
@@ -1593,7 +1533,7 @@ const styles = StyleSheet.create({
     },
     inputForms: {
         padding: 10,
-        borderRadius: 1,
+        borderRadius: 8,
         borderColor: "rgba(255,255,255,0.4)",
         borderWidth: 1,
         color: 'white',

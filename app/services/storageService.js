@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { log } from './logger';
 
 /**
  * Storage service for handling AsyncStorage operations
@@ -13,10 +14,10 @@ export default class StorageService {
    */
   static async getData(key, defaultValue = null) {
     try {
-      console.log(`Getting data for key: ${key}`);
+      log(`Getting data for key: ${key}`);
       const jsonValue = await AsyncStorage.getItem(key);
       const result = jsonValue != null ? JSON.parse(jsonValue) : defaultValue;
-      console.log(`Retrieved data for ${key}:`, result);
+      log(`Retrieved data for ${key}:`, result);
       return result;
     } catch (error) {
       console.error(`Error reading ${key} from storage:`, error);
@@ -32,7 +33,7 @@ export default class StorageService {
    */
   static async storeData(key, value) {
     try {
-      console.log(`Storing data for key: ${key}`, value);
+      log(`Storing data for key: ${key}`, value);
       const jsonValue = JSON.stringify(value);
       await AsyncStorage.setItem(key, jsonValue);
       return true;
@@ -64,7 +65,7 @@ export default class StorageService {
   static async clearAll() {
     try {
       await AsyncStorage.clear();
-      console.log('Storage cleared successfully');
+      log('Storage cleared successfully');
       return true;
     } catch (error) {
       console.error('Error clearing storage:', error);
