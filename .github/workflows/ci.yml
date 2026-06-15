@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+  eas-update:
+    name: EAS Update (OTA)
+    needs: lint
+    # Publish OTA updates only when changes land on main.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      # Skip (rather than fail) when no token is configured, so the workflow
+      # stays green until the user wires up EAS.
+      - name: Check for EXPO_TOKEN
+        id: expo_token
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "EXPO_TOKEN secret not set; skipping EAS Update."
+            echo "Add it under Settings -> Secrets -> Actions to enable OTA publishing."
+            echo "See https://docs.expo.dev/eas-update/github-actions"
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        if: steps.expo_token.outputs.has_token == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        if: steps.expo_token.outputs.has_token == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+
+      - name: Setup EAS
+        if: steps.expo_token.outputs.has_token == 'true'
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        if: steps.expo_token.outputs.has_token == 'true'
+        run: npm ci
+
+      - name: Publish OTA update
+        if: steps.expo_token.outputs.has_token == 'true'
+        run: eas update --auto --non-interactive

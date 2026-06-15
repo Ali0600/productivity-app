@@ -52,11 +52,7 @@ function TileGrid() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.topBar}>
-        <View style={{ width: 40 }} />
         <Text style={styles.title}>ADHDone</Text>
-        <TouchableOpacity onPress={() => {}}>
-          <SymbolView name="gearshape" size={32} tintColor="white" />
-        </TouchableOpacity>
       </View>
 
       {isLoading ? (
@@ -103,7 +99,7 @@ function TileGrid() {
 
       <Modal visible={addVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
-          <GlassCard style={styles.modalCard}>
+          <GlassCard style={styles.modalCard} colorScheme="dark" tintColor="rgba(46, 46, 80, 0.45)">
             <Text style={styles.modalTitle}>New List</Text>
             <TextInput
               style={styles.input}
@@ -142,7 +138,7 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
   },

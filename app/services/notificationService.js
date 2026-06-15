@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { log } from './logger';
 
 // Configure notifications to show when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -115,7 +116,7 @@ export default class NotificationService {
    */
   static async initializeBackgroundNotifications() {
     try {
-      console.log('Initializing background notification handlers...');
+      log('Initializing background notification handlers...');
 
       // Add notification response listeners (when user taps notification)
       const subscription = Notifications.addNotificationResponseReceivedListener(
@@ -127,7 +128,7 @@ export default class NotificationService {
         this.handleNotificationReceived
       );
 
-      console.log('Background notification handlers initialized successfully');
+      log('Background notification handlers initialized successfully');
       return { subscription, receivedSubscription };
     } catch (error) {
       console.error('Error initializing background notifications:', error);
@@ -139,15 +140,15 @@ export default class NotificationService {
    * @param {Object} response - Notification response object
    */
   static handleNotificationResponse = (response) => {
-    console.log('Notification response received:', response);
+    log('Notification response received:', response);
     
     const { notification, userText } = response;
-    console.log('User tapped on notification:', notification.request.content.title);
+    log('User tapped on notification:', notification.request.content.title);
     
     // Handle the notification tap
     // You can navigate to specific screens, update app state, etc.
     if (notification.request.content.data) {
-      console.log('Notification data:', notification.request.content.data);
+      log('Notification data:', notification.request.content.data);
     }
   };
 
@@ -156,7 +157,7 @@ export default class NotificationService {
    * @param {Object} notification - Notification object
    */
   static handleNotificationReceived = (notification) => {
-    console.log('Notification received in foreground:', notification);
+    log('Notification received in foreground:', notification);
     
     // Handle foreground notification
     // You can show custom UI, update app state, etc.
@@ -188,12 +189,12 @@ export default class NotificationService {
       if (existingStatus !== 'granted') {
         const { status } = await Notifications.requestPermissionsAsync();
         finalStatus = status;
-        console.log('Notification permission status:', finalStatus);
+        log('Notification permission status:', finalStatus);
       }
       
       // If we still don't have permission, we can't send notifications
       if (finalStatus !== 'granted') {
-        console.log('Failed to get push token for push notification!');
+        log('Failed to get push token for push notification!');
         return null;
       }
       
@@ -202,13 +203,13 @@ export default class NotificationService {
         token = (await Notifications.getExpoPushTokenAsync({
           projectId: Constants.expoConfig.extra?.eas?.projectId,
         })).data;
-        console.log("Successfully obtained push token:", token);
+        log("Successfully obtained push token:", token);
       } catch (tokenError) {
         console.error("Error getting push token:", tokenError);
         // Continue without a token, but at least don't crash
       }
     } else {
-      console.log('Must use physical device for Push Notifications');
+      log('Must use physical device for Push Notifications');
     }
 
     return token;
@@ -279,14 +280,19 @@ export default class NotificationService {
 
       const enabled = await this.getNotificationsEnabled();
       if (!enabled) {
-        console.log('Notifications disabled; not scheduling.');
+        log('Notifications disabled; not scheduling.');
         return [];
       }
 
       let { mainLists } = opts;
       if (!mainLists) {
         const stored = await AsyncStorage.getItem('mainLists');
-        mainLists = stored ? JSON.parse(stored) : [];
+        try {
+          mainLists = stored ? JSON.parse(stored) : [];
+        } catch (parseErr) {
+          console.warn('Corrupt mainLists in storage; scheduling with none.', parseErr);
+          mainLists = [];
+        }
       }
 
       const quiet = await this.getQuietHours();
@@ -376,7 +382,7 @@ export default class NotificationService {
       await AsyncStorage.setItem(this.RECURRING_NOTIFICATIONS_KEY, JSON.stringify(notificationIds));
 
       const quietLabel = quiet.enabled ? `${quiet.startMinutes}–${quiet.endMinutes}` : 'off';
-      console.log(`Scheduled ${notificationIds.length} notifications across ${mainLists.length} main list(s) (quiet=${quietLabel}).`);
+      log(`Scheduled ${notificationIds.length} notifications across ${mainLists.length} main list(s) (quiet=${quietLabel}).`);
       return notificationIds;
     } catch (error) {
       console.error('Error scheduling notifications:', error);
