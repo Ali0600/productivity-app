@@ -26,6 +26,8 @@ import { tapLight, selection, warning, success } from '../services/haptics';
 import { log } from '../services/logger';
 import { makeId } from '../utils/id';
 import { isRuleCurrentlyActive, rulesEqual, formatRuleChip } from '../utils/notificationRules';
+import { computeTagRecovery } from '../utils/tagStats';
+import TagRecovery from '../components/TagRecovery';
 
 const TIME_OF_DAY_VALUES = Array.from({ length: 48 }, (_, i) => i * 30);
 
@@ -58,6 +60,7 @@ function Homepage(props){
     });
     const [tagInputDraft, setTagInputDraft] = useState('');
     const [activeTags, setActiveTags] = useState(() => new Set());
+    const [recoveryVisible, setRecoveryVisible] = useState(false);
     const [completionLogger, setCompletionLogger] = useState({
         visible: false,
         taskId: null,
@@ -183,6 +186,13 @@ function Homepage(props){
             (task.tags ?? []).some((t) => lowered.has((t ?? '').toLowerCase()))
         );
     }, [currentListData?.tasks, activeTags]);
+
+    // Ordering (oldest completion first) is independent of "now", so this only
+    // needs to recompute when the underlying tasks change.
+    const tagRecovery = useMemo(
+        () => computeTagRecovery(currentMainData?.sideLists),
+        [currentMainData?.sideLists]
+    );
 
     useEffect(() => {
         setActiveTags(new Set());
@@ -1349,6 +1359,37 @@ function Homepage(props){
                         </SafeAreaView>
                     </Modal>
 
+                    <Modal visible={recoveryVisible} animationType="slide" transparent={true}>
+                        <SafeAreaView style={{ flex: 1 }}>
+                            <GlassCard
+                                style={styles.modalContent}
+                                colorScheme="dark"
+                                tintColor="rgba(46, 46, 80, 0.45)"
+                            >
+                                <Text style={styles.settingsTitle}>Muscle Recovery</Text>
+                                <Text style={styles.messagesSubtitle}>
+                                    Longest since worked, top first.
+                                </Text>
+                                <TagRecovery rows={tagRecovery} />
+                            </GlassCard>
+
+                            <GlassCard
+                                style={styles.buttonWrapper}
+                                colorScheme="dark"
+                                tintColor="rgba(46, 46, 80, 0.45)"
+                            >
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        tapLight();
+                                        setRecoveryVisible(false);
+                                    }}
+                                >
+                                    <SymbolView name="xmark.circle.fill" size={60} tintColor="white" />
+                                </TouchableOpacity>
+                            </GlassCard>
+                        </SafeAreaView>
+                    </Modal>
+
                     <SafeAreaView style={styles.productName}>
                         <GlassCard
                             style={styles.topBar}
@@ -1374,14 +1415,24 @@ function Homepage(props){
                         </GlassCard>
                     </SafeAreaView>
 
-                    {availableTags.length > 0 ? (
+                    {tagRecovery.length > 0 ? (
                         <View style={styles.tagFilterStrip}>
+                            <TouchableOpacity
+                                onPress={() => {
+                                    tapLight();
+                                    setRecoveryVisible(true);
+                                }}
+                                style={styles.recoveryButton}
+                            >
+                                <SymbolView name="chart.bar.xaxis" size={24} tintColor="white" />
+                            </TouchableOpacity>
                             <FlatList
                                 data={availableTags}
                                 keyExtractor={(t) => t}
                                 horizontal
                                 showsHorizontalScrollIndicator={false}
                                 contentContainerStyle={styles.tagFilterContent}
+                                style={styles.tagFilterList}
                                 renderItem={({ item }) => {
                                     const active = activeTags.has(item);
                                     return (
@@ -1421,6 +1472,7 @@ function Homepage(props){
                                 onUpdate={updateTaskInList}
                                 onPress={() => handleOpenTaskEditor(item)}
                                 variables={item.variables}
+                                tags={item.tags}
                             />
                         )}
                         ListEmptyComponent={
@@ -1770,7 +1822,17 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
     },
     tagFilterStrip: {
+        flexDirection: 'row',
+        alignItems: 'center',
         paddingVertical: 8,
+    },
+    tagFilterList: {
+        flex: 1,
+    },
+    recoveryButton: {
+        paddingLeft: 12,
+        paddingRight: 8,
+        paddingVertical: 4,
     },
     tagFilterContent: {
         paddingHorizontal: 12,

@@ -1,5 +1,5 @@
 import { memo, useRef } from "react";
-import { StyleSheet, Text, TouchableOpacity, Alert } from "react-native";
+import { StyleSheet, Text, View, TouchableOpacity, Alert } from "react-native";
 import Swipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, { useAnimatedStyle, useAnimatedReaction, runOnJS } from 'react-native-reanimated';
 import { SymbolView } from 'expo-symbols';
@@ -51,7 +51,7 @@ const LeftAction = ({ progress, onPress }) => {
     );
 };
 
-const Task = ({ text, creationTime, index, taskId, onRemove, onComplete, onUpdate, onPress, variables }) => {
+const Task = ({ text, creationTime, index, taskId, onRemove, onComplete, onUpdate, onPress, variables, tags }) => {
     const swipeableRef = useRef(null);
 
     const closeSwipe = () => {
@@ -168,7 +168,18 @@ const Task = ({ text, creationTime, index, taskId, onRemove, onComplete, onUpdat
                     onLongPress={handleEdit}
                     delayLongPress={500}
                 >
-                    <Text style={styles.taskText}>{text}</Text>
+                    <View style={styles.taskMain}>
+                        <Text style={styles.taskText}>{text}</Text>
+                        {tags && tags.length > 0 ? (
+                            <View style={styles.tagRow}>
+                                {tags.map((tag, i) => (
+                                    <View style={styles.tagChip} key={`${tag}-${i}`}>
+                                        <Text style={styles.tagChipText} numberOfLines={1}>{tag}</Text>
+                                    </View>
+                                ))}
+                            </View>
+                        ) : null}
+                    </View>
                     <Text style={styles.taskTime}>{creationTime.toString()}</Text>
                 </TouchableOpacity>
             </GlassCard>
@@ -186,8 +197,29 @@ const styles = StyleSheet.create({
         padding: 20,
         justifyContent: "space-between"
     },
+    taskMain: {
+        flex: 1,
+        marginRight: 12,
+    },
     taskText: {
         color: 'white',
+    },
+    tagRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 6,
+        marginTop: 8,
+    },
+    tagChip: {
+        backgroundColor: 'rgba(165, 180, 252, 0.18)',
+        borderRadius: 10,
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+    },
+    tagChipText: {
+        color: '#c7d2fe',
+        fontSize: 11,
+        fontWeight: '500',
     },
     taskTime: {
         color: 'rgba(255,255,255,0.7)',
