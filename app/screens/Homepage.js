@@ -166,17 +166,27 @@ function Homepage(props){
         return ml?.notificationMessages ?? [];
     }, [mainLists, currentMainList]);
 
+    // Ordering (oldest completion first) is independent of "now", so this only
+    // needs to recompute when the underlying tasks change.
+    const tagRecovery = useMemo(
+        () => computeTagRecovery(currentMainData?.sideLists),
+        [currentMainData?.sideLists]
+    );
+
+    // Tags present in the current side list, ordered to match the recovery view
+    // (never-worked first, then longest-since-completed) instead of alphabetically.
     const availableTags = useMemo(() => {
-        const seen = new Map();
+        const present = new Set();
         for (const task of currentListData?.tasks ?? []) {
             for (const t of task.tags ?? []) {
-                const key = (t ?? '').toLowerCase();
-                if (!key || seen.has(key)) continue;
-                seen.set(key, t);
+                const key = (t ?? '').trim().toLowerCase();
+                if (key) present.add(key);
             }
         }
-        return [...seen.values()].sort((a, b) => a.localeCompare(b));
-    }, [currentListData?.tasks]);
+        return tagRecovery
+            .filter((r) => present.has(r.tag.toLowerCase()))
+            .map((r) => r.tag);
+    }, [currentListData?.tasks, tagRecovery]);
 
     const visibleTasks = useMemo(() => {
         const tasks = currentListData?.tasks ?? [];
@@ -186,13 +196,6 @@ function Homepage(props){
             (task.tags ?? []).some((t) => lowered.has((t ?? '').toLowerCase()))
         );
     }, [currentListData?.tasks, activeTags]);
-
-    // Ordering (oldest completion first) is independent of "now", so this only
-    // needs to recompute when the underlying tasks change.
-    const tagRecovery = useMemo(
-        () => computeTagRecovery(currentMainData?.sideLists),
-        [currentMainData?.sideLists]
-    );
 
     useEffect(() => {
         setActiveTags(new Set());
