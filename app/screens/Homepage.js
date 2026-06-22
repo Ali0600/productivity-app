@@ -201,6 +201,18 @@ function Homepage(props){
         setActiveTags(new Set());
     }, [currentList]);
 
+    // If a filtered tag is removed from its last task it vanishes from the strip,
+    // leaving no chip to deselect. Prune active filters down to tags that still
+    // exist so the view never gets stuck — clearing back to "All" when none remain.
+    useEffect(() => {
+        setActiveTags((prev) => {
+            if (prev.size === 0) return prev;
+            const available = new Set(availableTags.map((t) => t.toLowerCase()));
+            const next = new Set([...prev].filter((t) => available.has(t.toLowerCase())));
+            return next.size === prev.size ? prev : next;
+        });
+    }, [availableTags]);
+
     const handleOpenMessages = useCallback(() => {
         setNewMessageText('');
         setMessagesModalVisible(true);
