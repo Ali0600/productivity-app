@@ -431,6 +431,7 @@ function Homepage(props){
             return;
         }
         completeTaskInList(task.id);
+        setActiveTags((prev) => (prev.size > 0 ? new Set() : prev));
     }, [completeTaskInList]);
 
     const handleCloseCompletionLogger = useCallback(() => {
@@ -448,6 +449,7 @@ function Homepage(props){
             variables: drafts.map((d) => ({ name: d.name, lastValue: d.value ?? '' })),
         });
         completeTaskInList(taskId);
+        setActiveTags((prev) => (prev.size > 0 ? new Set() : prev));
         handleCloseCompletionLogger();
     }, [completionLogger, updateTaskInList, completeTaskInList, handleCloseCompletionLogger]);
 
