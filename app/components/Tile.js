@@ -1,10 +1,10 @@
 import { memo } from 'react';
-import { StyleSheet, Text, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, Alert } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import GlassCard from './GlassCard';
 import { tapLight, tapMedium, warning } from '../services/haptics';
 
-const Tile = ({ name, isPlus, onPress, onRename, onDelete, style, textStyle }) => {
+const Tile = ({ name, isPlus, streak = 0, onPress, onRename, onDelete, style, textStyle }) => {
   const handlePress = () => {
     tapLight();
     if (onPress) onPress(name);
@@ -77,6 +77,11 @@ const Tile = ({ name, isPlus, onPress, onRename, onDelete, style, textStyle }) =
             {name}
           </Text>
         )}
+        {!isPlus && streak >= 2 ? (
+          <View style={styles.streakBadge}>
+            <Text style={styles.streakText}>🔥 {streak}</Text>
+          </View>
+        ) : null}
       </TouchableOpacity>
     </GlassCard>
   );
@@ -104,6 +109,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: 'white',
     textAlign: 'center',
+  },
+  streakBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  streakText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 

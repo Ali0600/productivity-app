@@ -44,7 +44,7 @@ export const useListTasks = (listName) => {
   const updateTaskInList = useCallback((taskId, updates) => updateTask(listName, taskId, updates), [updateTask, listName]);
   const reorderTasksInList = useCallback((reorderedTasks) => reorderTasks(listName, reorderedTasks), [reorderTasks, listName]);
   const moveTaskFromList = useCallback((toListName, taskId) => moveTask(listName, toListName, taskId), [moveTask, listName]);
-  const completeTaskInList = useCallback((taskId) => completeTask(listName, taskId), [completeTask, listName]);
+  const completeTaskInList = useCallback((taskId, values) => completeTask(listName, taskId, values), [completeTask, listName]);
   const completeTaskInListByIndex = useCallback((index) => completeTaskByIndex(listName, index), [completeTaskByIndex, listName]);
 
   return {

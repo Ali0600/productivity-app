@@ -28,6 +28,7 @@ import { makeId } from '../utils/id';
 import { isRuleCurrentlyActive, rulesEqual, formatRuleChip } from '../utils/notificationRules';
 import { computeTagRecovery } from '../utils/tagStats';
 import TagRecovery from '../components/TagRecovery';
+import CompletionBurst from '../components/CompletionBurst';
 
 const TIME_OF_DAY_VALUES = Array.from({ length: 48 }, (_, i) => i * 30);
 
@@ -67,6 +68,8 @@ function Homepage(props){
         taskName: '',
         drafts: [],
     });
+    // Incremented per completion; keys a remount of the one-shot burst animation.
+    const [burstCount, setBurstCount] = useState(0);
 
     useEffect(() => {
         NotificationService.getNotificationsEnabled().then(setNotificationsEnabled);
@@ -451,6 +454,7 @@ function Homepage(props){
         }
         completeTaskInList(task.id);
         setActiveTags((prev) => (prev.size > 0 ? new Set() : prev));
+        setBurstCount((c) => c + 1);
     }, [completeTaskInList]);
 
     const handleCloseCompletionLogger = useCallback(() => {
@@ -467,8 +471,12 @@ function Homepage(props){
         updateTaskInList(taskId, {
             variables: drafts.map((d) => ({ name: d.name, lastValue: d.value ?? '' })),
         });
-        completeTaskInList(taskId);
+        completeTaskInList(
+            taskId,
+            Object.fromEntries(drafts.map((d) => [d.name, d.value ?? '']))
+        );
         setActiveTags((prev) => (prev.size > 0 ? new Set() : prev));
+        setBurstCount((c) => c + 1);
         handleCloseCompletionLogger();
     }, [completionLogger, updateTaskInList, completeTaskInList, handleCloseCompletionLogger]);
 
@@ -1523,6 +1531,8 @@ function Homepage(props){
                     </GlassCard>
 
                     <KeyboardAvoidingView behavior="padding" />
+
+                    {burstCount > 0 ? <CompletionBurst key={burstCount} /> : null}
                 </>
             )}
         </View>

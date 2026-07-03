@@ -152,6 +152,19 @@ export const AppStateProvider = ({ children }) => {
     [currentMainList, mutateSideList]
   );
 
+  // Append-only history entry per completion; `values` carries the logged
+  // variable values (e.g. reps/weight) when present. Capped so storage stays flat.
+  const MAX_COMPLETIONS_KEPT = 300;
+  const markCompleted = (task, values) => {
+    const at = Date.now();
+    const entry = values ? { at, values } : { at };
+    return {
+      ...task,
+      completedAt: new Date(at),
+      completions: [...(task.completions ?? []), entry].slice(-MAX_COMPLETIONS_KEPT),
+    };
+  };
+
   const completeTaskByIndex = useCallback(
     (listName, idx) => {
       if (!currentMainList) return;
@@ -164,7 +177,7 @@ export const AppStateProvider = ({ children }) => {
               if (sl.listName !== listName) return sl;
               if (idx < 0 || idx >= sl.tasks.length) return sl;
               const next = [...sl.tasks];
-              const done = { ...next[idx], completedAt: new Date() };
+              const done = markCompleted(next[idx]);
               next.splice(idx, 1);
               next.push(done);
               return { ...sl, tasks: next, lastCompletedAt: new Date() };
@@ -177,7 +190,7 @@ export const AppStateProvider = ({ children }) => {
   );
 
   const completeTask = useCallback(
-    (listName, taskId) => {
+    (listName, taskId, values) => {
       if (!currentMainList) return;
       setMainLists((prev) =>
         prev.map((ml) => {
@@ -189,7 +202,7 @@ export const AppStateProvider = ({ children }) => {
               const idx = sl.tasks.findIndex((t) => t.id === taskId);
               if (idx === -1) return sl;
               const next = [...sl.tasks];
-              const done = { ...next[idx], completedAt: new Date() };
+              const done = markCompleted(next[idx], values);
               next.splice(idx, 1);
               next.push(done);
               return { ...sl, tasks: next, lastCompletedAt: new Date() };

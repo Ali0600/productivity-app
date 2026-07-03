@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -16,6 +16,7 @@ import Tile from '../components/Tile';
 import GlassCard from '../components/GlassCard';
 import { useMainLists, useAppLoading } from '../hooks/useAppState';
 import { tapLight } from '../services/haptics';
+import { computeStreak } from '../utils/streaks';
 
 const LONG_NAME_THRESHOLD = 5;
 const isLongName = (name) => (name?.length ?? 0) > LONG_NAME_THRESHOLD;
@@ -35,6 +36,12 @@ function TileGrid() {
 
   const hero = mainLists[0];
   const rest = mainLists.slice(1);
+
+  const streaks = useMemo(() => {
+    const byName = new Map();
+    for (const ml of mainLists) byName.set(ml.name, computeStreak(ml));
+    return byName;
+  }, [mainLists]);
 
   const handleAdd = () => {
     const trimmed = newName.trim();
@@ -78,6 +85,7 @@ function TileGrid() {
             <View style={styles.heroItem}>
               <Tile
                 name={hero.name}
+                streak={streaks.get(hero.name) ?? 0}
                 onPress={switchMainList}
                 onRename={handleRename}
                 onDelete={removeMainList}
@@ -93,6 +101,7 @@ function TileGrid() {
               >
                 <Tile
                   name={ml.name}
+                  streak={streaks.get(ml.name) ?? 0}
                   onPress={switchMainList}
                   onRename={handleRename}
                   onDelete={removeMainList}
