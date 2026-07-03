@@ -9,6 +9,7 @@ import Animated, {
     Easing,
 } from 'react-native-reanimated';
 import NotificationService from "../services/notificationService";
+import StorageService from "../services/storageService";
 import * as Sharing from 'expo-sharing';
 import { Paths, File } from 'expo-file-system';
 import * as Clipboard from 'expo-clipboard';
@@ -31,6 +32,33 @@ import TagRecovery from '../components/TagRecovery';
 import CompletionBurst from '../components/CompletionBurst';
 
 const TIME_OF_DAY_VALUES = Array.from({ length: 48 }, (_, i) => i * 30);
+
+// Returns a human-readable problem string for an import payload, or null if valid.
+const validateBackupPayload = (payload) => {
+    if (!payload || typeof payload !== 'object') return 'Not a backup object.';
+    if (payload.app !== 'ADHDone') return 'Missing the ADHDone marker — is this a backup export?';
+    if (payload.version !== 1) return `Unsupported backup version: ${String(payload.version)}.`;
+    if (!Array.isArray(payload.mainLists)) return 'Backup contains no lists array.';
+    const mainNames = new Set();
+    for (const ml of payload.mainLists) {
+        if (typeof ml?.name !== 'string' || !Array.isArray(ml?.sideLists)) {
+            return 'A main list entry is malformed.';
+        }
+        if (mainNames.has(ml.name)) return `Duplicate main list name: "${ml.name}".`;
+        mainNames.add(ml.name);
+        const sideNames = new Set();
+        for (const sl of ml.sideLists) {
+            if (typeof sl?.listName !== 'string' || !Array.isArray(sl?.tasks)) {
+                return 'A side list entry is malformed.';
+            }
+            if (sideNames.has(sl.listName)) {
+                return `Duplicate side list name "${sl.listName}" in "${ml.name}".`;
+            }
+            sideNames.add(sl.listName);
+        }
+    }
+    return null;
+};
 
 function Homepage(props){
     const [modalVisible, setModalVisible] = useState(false);
@@ -88,7 +116,7 @@ function Homepage(props){
     // Use our custom hooks
     const { isLoading, error } = useAppLoading();
     const { lists, currentList, currentListData, addList, removeList, switchList, updateLists, moveSideList } = useLists();
-    const { mainLists, currentMainList, currentMainData, exitToTileGrid, setNotificationMessages } = useMainLists();
+    const { mainLists, currentMainList, currentMainData, exitToTileGrid, replaceMainLists, setNotificationMessages } = useMainLists();
     const {
         addTaskToList,
         reorderTasksInList,
@@ -545,6 +573,62 @@ function Homepage(props){
         );
     }, [mainLists]);
 
+    const handleImport = useCallback(async () => {
+        tapLight();
+        let payload;
+        try {
+            const raw = await Clipboard.getStringAsync();
+            if (!raw?.trim()) {
+                Alert.alert(
+                    'Clipboard empty',
+                    'Copy an ADHDone backup first (Export Data → Copy as JSON).'
+                );
+                return;
+            }
+            payload = JSON.parse(raw);
+        } catch {
+            Alert.alert('Invalid backup', 'The clipboard does not contain valid JSON.');
+            return;
+        }
+        const problem = validateBackupPayload(payload);
+        if (problem) {
+            Alert.alert('Invalid backup', problem);
+            return;
+        }
+        const listCount = payload.mainLists.length;
+        const taskCount = payload.mainLists.reduce(
+            (sum, ml) => sum + ml.sideLists.reduce((s, sl) => s + sl.tasks.length, 0),
+            0
+        );
+        Alert.alert(
+            'Replace all data?',
+            `Import ${listCount} main list${listCount === 1 ? '' : 's'} with ${taskCount} task${taskCount === 1 ? '' : 's'}? This replaces everything currently in the app.`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Replace',
+                    style: 'destructive',
+                    onPress: async () => {
+                        // Safety hatch: stash the outgoing data before overwriting.
+                        const snapshotOk = await StorageService.storeData(
+                            'mainListsPreImportBackup',
+                            { savedAt: new Date().toISOString(), mainLists }
+                        );
+                        if (!snapshotOk) {
+                            Alert.alert(
+                                'Import cancelled',
+                                'Could not snapshot the current data first, so nothing was changed.'
+                            );
+                            return;
+                        }
+                        success();
+                        replaceMainLists(payload.mainLists);
+                    },
+                },
+            ]
+        );
+    }, [mainLists, replaceMainLists]);
+
     const pulse = useSharedValue(0);
     useEffect(() => {
         pulse.value = withRepeat(
@@ -742,6 +826,11 @@ function Homepage(props){
                             <TouchableOpacity onPress={handleExport} style={styles.settingsRow}>
                                 <Text style={styles.settingsRowLabel}>Export Data</Text>
                                 <SymbolView name="square.and.arrow.up" size={20} tintColor="white" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity onPress={handleImport} style={styles.settingsRow}>
+                                <Text style={styles.settingsRowLabel}>Import Data</Text>
+                                <SymbolView name="square.and.arrow.down" size={20} tintColor="white" />
                             </TouchableOpacity>
                         </GlassCard>
 

@@ -7,6 +7,22 @@ export const AppStateContext = createContext();
 
 const DEFAULT_MAIN_LIST_NAME = 'Tasks';
 
+// Bring a raw mainLists array (from storage or an imported backup) up to the
+// current message shape: string messages → objects, missing intervals filled
+// from the list-level fallback.
+const normalizeMainLists = (rawLists) =>
+  rawLists.map((ml) => {
+    const msgs = Array.isArray(ml.notificationMessages) ? ml.notificationMessages : [];
+    const fallbackInterval = ml.notificationIntervalMinutes ?? 60;
+    const normalized = msgs.map((m) => {
+      const base = typeof m === 'string' ? { body: m, rule: null } : m;
+      return base.intervalMinutes != null
+        ? base
+        : { ...base, intervalMinutes: fallbackInterval };
+    });
+    return { ...ml, notificationMessages: normalized };
+  });
+
 const createDefaultMainLists = () => [
   {
     name: DEFAULT_MAIN_LIST_NAME,
@@ -42,18 +58,7 @@ export const AppStateProvider = ({ children }) => {
 
         const loadedMain = await StorageService.getMainLists();
         if (loadedMain !== null && Array.isArray(loadedMain)) {
-          const migrated = loadedMain.map((ml) => {
-            const msgs = Array.isArray(ml.notificationMessages) ? ml.notificationMessages : [];
-            const fallbackInterval = ml.notificationIntervalMinutes ?? 60;
-            const normalized = msgs.map((m) => {
-              const base = typeof m === 'string' ? { body: m, rule: null } : m;
-              return base.intervalMinutes != null
-                ? base
-                : { ...base, intervalMinutes: fallbackInterval };
-            });
-            return { ...ml, notificationMessages: normalized };
-          });
-          setMainLists(migrated);
+          setMainLists(normalizeMainLists(loadedMain));
         } else {
           const defaults = createDefaultMainLists();
           setMainLists(defaults);
@@ -401,6 +406,16 @@ export const AppStateProvider = ({ children }) => {
     setCurrentSideList('');
   }, []);
 
+  // Wholesale replacement (backup import). Resets navigation to the tile grid
+  // since the current selection may not exist in the imported data.
+  const replaceMainLists = useCallback((nextMainLists) => {
+    if (!Array.isArray(nextMainLists)) return false;
+    setMainLists(normalizeMainLists(nextMainLists));
+    setCurrentMainList('');
+    setCurrentSideList('');
+    return true;
+  }, []);
+
   // --- Derived ---
   const currentMainData = useMemo(
     () => mainLists.find((ml) => ml.name === currentMainList),
@@ -425,6 +440,7 @@ export const AppStateProvider = ({ children }) => {
       renameMainList,
       switchMainList,
       exitToTileGrid,
+      replaceMainLists,
       setNotificationMessages,
       lists,
       currentList,
@@ -454,6 +470,7 @@ export const AppStateProvider = ({ children }) => {
       renameMainList,
       switchMainList,
       exitToTileGrid,
+      replaceMainLists,
       setNotificationMessages,
       lists,
       currentList,
