@@ -49,6 +49,15 @@ function TileGrid() {
     setAddVisible(false);
   };
 
+  // renameMainList silently no-ops on a taken name; surface that instead.
+  const handleRename = (oldName, newName) => {
+    if (mainLists.some((ml) => ml.name === newName)) {
+      Alert.alert('Duplicate', `A list called "${newName}" already exists.`);
+      return;
+    }
+    renameMainList(oldName, newName);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.topBar}>
@@ -70,7 +79,7 @@ function TileGrid() {
               <Tile
                 name={hero.name}
                 onPress={switchMainList}
-                onRename={renameMainList}
+                onRename={handleRename}
                 onDelete={removeMainList}
               />
             </View>
@@ -85,7 +94,7 @@ function TileGrid() {
                 <Tile
                   name={ml.name}
                   onPress={switchMainList}
-                  onRename={renameMainList}
+                  onRename={handleRename}
                   onDelete={removeMainList}
                 />
               </View>

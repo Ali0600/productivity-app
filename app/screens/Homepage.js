@@ -123,10 +123,17 @@ function Homepage(props){
     };
 
     const handleAddNewList = () => {
-        if (!newListName.trim()) return;
+        const trimmed = newListName.trim();
+        if (!trimmed) return;
+
+        if (lists.some((l) => l.listName === trimmed)) {
+            warning();
+            Alert.alert('Duplicate', `A list called "${trimmed}" already exists.`);
+            return;
+        }
 
         tapLight();
-        addList(newListName);
+        addList(trimmed);
         setNewListName(''); // Clear input
         setTaskListVisible(false);
     };
@@ -1482,11 +1489,9 @@ function Homepage(props){
                             <Task
                                 text={item.taskName}
                                 index={index}
-                                taskId={item.id || `task-${currentList}-${index}`}
                                 creationTime={moment(item.completedAt ?? item.creationTime).fromNow()}
                                 onRemove={() => removeTaskFromList(item.id)}
                                 onComplete={() => handleCompleteTask(item)}
-                                onUpdate={updateTaskInList}
                                 onPress={() => handleOpenTaskEditor(item)}
                                 variables={item.variables}
                                 tags={item.tags}

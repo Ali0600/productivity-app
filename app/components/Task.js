@@ -51,7 +51,7 @@ const LeftAction = ({ progress, onPress }) => {
     );
 };
 
-const Task = ({ text, creationTime, index, taskId, onRemove, onComplete, onUpdate, onPress, variables, tags }) => {
+const Task = ({ text, creationTime, index, onRemove, onComplete, onPress, variables, tags }) => {
     const swipeableRef = useRef(null);
 
     const closeSwipe = () => {
@@ -111,33 +111,6 @@ const Task = ({ text, creationTime, index, taskId, onRemove, onComplete, onUpdat
         );
     };
 
-    const handleEdit = () => {
-        tapMedium();
-        Alert.prompt(
-            "Edit Task",
-            "Enter new task name:",
-            [
-                {
-                    text: "Cancel",
-                    style: "cancel"
-                },
-                {
-                    text: "Save",
-                    onPress: (newText) => {
-                        if (newText && newText.trim()) {
-                            onUpdate(taskId, {
-                                text: newText.trim(),
-                                taskName: newText.trim()
-                            });
-                        }
-                    }
-                }
-            ],
-            "plain-text",
-            text
-        );
-    };
-
     return (
         <Swipeable
             ref={swipeableRef}
@@ -165,7 +138,7 @@ const Task = ({ text, creationTime, index, taskId, onRemove, onComplete, onUpdat
                 <TouchableOpacity
                     style={styles.taskContainer}
                     onPress={onPress}
-                    onLongPress={handleEdit}
+                    onLongPress={onPress}
                     delayLongPress={500}
                 >
                     <View style={styles.taskMain}>

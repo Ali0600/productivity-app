@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { Alert } from 'react-native';
+import { Alert, AppState } from 'react-native';
 import * as Updates from 'expo-updates';
 import Homepage from './app/screens/Homepage';
 import TileGrid from './app/screens/TileGrid';
@@ -9,7 +9,11 @@ import { AppStateProvider } from './app/context/AppStateContext';
 import { useMainLists } from './app/hooks/useAppState';
 import NotificationService from './app/services/notificationService';
 import { log } from './app/services/logger';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+
+// iOS keeps apps suspended for days, so a cold-launch-only update check rarely
+// runs; re-check on foreground, but no more than once per this window.
+const OTA_CHECK_MIN_INTERVAL_MS = 15 * 60 * 1000;
 
 function RootScreen() {
   const { currentMainList } = useMainLists();
@@ -39,9 +43,15 @@ export default function App() {
     initializeNotifications();
   }, []);
 
+  const lastOtaCheckAt = useRef(0);
+  const appStateRef = useRef(AppState.currentState);
+
   useEffect(() => {
     const checkForOTAUpdate = async () => {
       if (__DEV__ || !Updates.isEnabled) return;
+      const now = Date.now();
+      if (now - lastOtaCheckAt.current < OTA_CHECK_MIN_INTERVAL_MS) return;
+      lastOtaCheckAt.current = now;
       try {
         const result = await Updates.checkForUpdateAsync();
         if (!result.isAvailable) return;
@@ -65,7 +75,15 @@ export default function App() {
         console.error('OTA update check failed:', error);
       }
     };
+
     checkForOTAUpdate();
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const cameToForeground =
+        appStateRef.current.match(/inactive|background/) && nextState === 'active';
+      appStateRef.current = nextState;
+      if (cameToForeground) checkForOTAUpdate();
+    });
+    return () => subscription.remove();
   }, []);
 
   return (
