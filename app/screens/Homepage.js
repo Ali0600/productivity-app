@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { View, StyleSheet, Text, Modal, SafeAreaView, TouchableOpacity, TextInput, KeyboardAvoidingView, FlatList, ScrollView, ActivityIndicator, ActionSheetIOS, Alert, Switch } from "react-native";
+import { View, StyleSheet, Text, Modal, SafeAreaView, TouchableOpacity, TextInput, KeyboardAvoidingView, FlatList, ActivityIndicator, ActionSheetIOS, Alert, Switch } from "react-native";
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -26,10 +26,12 @@ import { useAppState, useLists, useListTasks, useAppLoading, useMainLists } from
 import { tapLight, selection, warning, success } from '../services/haptics';
 import { log } from '../services/logger';
 import { makeId } from '../utils/id';
-import { isRuleCurrentlyActive, rulesEqual, formatRuleChip } from '../utils/notificationRules';
+import { rulesEqual } from '../utils/notificationRules';
 import { computeTagRecovery } from '../utils/tagStats';
 import TagRecovery from '../components/TagRecovery';
 import CompletionBurst from '../components/CompletionBurst';
+import MessagesModal from '../components/modals/MessagesModal';
+import TaskEditorModal from '../components/modals/TaskEditorModal';
 
 const TIME_OF_DAY_VALUES = Array.from({ length: 48 }, (_, i) => i * 30);
 
@@ -845,484 +847,34 @@ function Homepage(props){
                         </GlassCard>
                     </Modal>
 
-                    <Modal visible={messagesModalVisible} animationType="slide" transparent={true}>
-                        <SafeAreaView style={{ flex: 1 }}>
-                            <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-                                <GlassCard
-                                    style={styles.modalContent}
-                                    colorScheme="dark"
-                                    tintColor="rgba(46, 46, 80, 0.45)"
-                                >
-                                    <Text style={styles.settingsTitle}>
-                                        {`Messages for "${currentMainList}"`}
-                                    </Text>
-                                    <Text style={styles.messagesSubtitle}>
-                                        Reminders cycle through these in order.
-                                    </Text>
+                    <MessagesModal
+                        visible={messagesModalVisible}
+                        mainListName={currentMainList}
+                        mainData={currentMainData}
+                        messages={currentMessages}
+                        newMessageText={newMessageText}
+                        onChangeNewMessageText={setNewMessageText}
+                        onAddMessage={handleAddMessage}
+                        onDeleteMessage={handleDeleteMessage}
+                        onOpenEditor={handleOpenMessageEditor}
+                        onClose={handleCloseMessages}
+                        editor={messageEditor}
+                        setEditor={setMessageEditor}
+                        onSaveEditor={handleSaveMessage}
+                    />
 
-                                    <FlatList
-                                        data={currentMessages}
-                                        keyExtractor={(_, i) => `msg-${i}`}
-                                        renderItem={({ item, index }) => {
-                                            const body = typeof item === 'string' ? item : item?.body;
-                                            const rule = typeof item === 'string' ? null : item?.rule;
-                                            const chip = formatRuleChip(rule, currentMainData);
-                                            const active = isRuleCurrentlyActive(rule, currentMainData);
-                                            const chipStyle = [
-                                                styles.ruleChipText,
-                                                chip.tone === 'dim' && styles.ruleChipDim,
-                                                chip.tone === 'warn' && styles.ruleChipWarn,
-                                                active && styles.ruleChipActive,
-                                            ];
-                                            return (
-                                                <View style={styles.messageRow}>
-                                                    <TouchableOpacity
-                                                        style={styles.messageRowLeft}
-                                                        onPress={() => handleOpenMessageEditor(index)}
-                                                        activeOpacity={0.7}
-                                                    >
-                                                        <Text style={styles.messageText} numberOfLines={2}>
-                                                            {body}
-                                                        </Text>
-                                                        <Text style={chipStyle} numberOfLines={1}>
-                                                            {active ? '● ' : ''}{chip.label}
-                                                        </Text>
-                                                    </TouchableOpacity>
-                                                    <TouchableOpacity onPress={() => handleDeleteMessage(index)}>
-                                                        <SymbolView name="trash.fill" size={22} tintColor="rgba(255,180,180,0.9)" />
-                                                    </TouchableOpacity>
-                                                </View>
-                                            );
-                                        }}
-                                        ListEmptyComponent={
-                                            <Text style={styles.messagesEmpty}>
-                                                No messages yet. Add one below to start receiving reminders.
-                                            </Text>
-                                        }
-                                    />
-
-                                    <View style={styles.messageInputRow}>
-                                        <TextInput
-                                            value={newMessageText}
-                                            onChangeText={setNewMessageText}
-                                            placeholder="New reminder…"
-                                            placeholderTextColor="rgba(255,255,255,0.5)"
-                                            style={styles.messageInput}
-                                            onSubmitEditing={handleAddMessage}
-                                            returnKeyType="done"
-                                        />
-                                        <TouchableOpacity onPress={handleAddMessage}>
-                                            <SymbolView name="plus.circle.fill" size={32} tintColor="white" />
-                                        </TouchableOpacity>
-                                    </View>
-                                </GlassCard>
-
-                                <GlassCard
-                                    style={styles.buttonWrapper}
-                                    colorScheme="dark"
-                                    tintColor="rgba(46, 46, 80, 0.45)"
-                                >
-                                    <TouchableOpacity onPress={handleCloseMessages}>
-                                        <SymbolView name="checkmark.circle.fill" size={60} tintColor="white" />
-                                    </TouchableOpacity>
-                                </GlassCard>
-                            </KeyboardAvoidingView>
-                        </SafeAreaView>
-
-                    <Modal visible={messageEditor.visible} animationType="slide" transparent={true}>
-                        <SafeAreaView style={{ flex: 1 }}>
-                            <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-                            <GlassCard
-                                style={styles.modalContent}
-                                colorScheme="dark"
-                                tintColor="rgba(46, 46, 80, 0.45)"
-                            >
-                                <Text style={styles.settingsTitle}>Edit message</Text>
-
-                                <Text style={styles.ruleSectionLabel}>Message</Text>
-                                <TextInput
-                                    style={styles.messageEditorInput}
-                                    value={messageEditor.draftBody}
-                                    onChangeText={(text) =>
-                                        setMessageEditor((r) => ({ ...r, draftBody: text }))
-                                    }
-                                    placeholder="Reminder text"
-                                    placeholderTextColor="rgba(255,255,255,0.5)"
-                                    multiline
-                                />
-
-                                <Text style={styles.ruleSectionLabel}>Reminder interval</Text>
-                                <IntervalSlider
-                                    key={`msg-interval-${messageEditor.messageIndex}-${messageEditor.draftInterval}`}
-                                    value={messageEditor.draftInterval ?? 60}
-                                    onChangeComplete={(mins) =>
-                                        setMessageEditor((r) => ({ ...r, draftInterval: mins }))
-                                    }
-                                />
-
-                                <Text style={styles.ruleSectionLabel}>Pause rule</Text>
-                                <View style={styles.ruleSegments}>
-                                    {[
-                                        { key: 'none', label: 'None' },
-                                        { key: 'task', label: 'Task' },
-                                        { key: 'sideList', label: 'Side list' },
-                                        { key: 'mainList', label: 'Main list' },
-                                    ].map((opt) => {
-                                        const active = (messageEditor.draftRule?.type ?? 'none') === opt.key;
-                                        return (
-                                            <TouchableOpacity
-                                                key={opt.key}
-                                                style={[styles.ruleSegment, active && styles.ruleSegmentActive]}
-                                                onPress={() => {
-                                                    selection();
-                                                    setMessageEditor((r) => ({
-                                                        ...r,
-                                                        draftRule: opt.key === 'none' ? null : { type: opt.key },
-                                                    }));
-                                                }}
-                                            >
-                                                <Text style={[styles.ruleSegmentText, active && styles.ruleSegmentTextActive]}>
-                                                    {opt.label}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        );
-                                    })}
-                                </View>
-
-                                <View style={styles.ruleEditorBody}>
-                                    {(() => {
-                                        const draft = messageEditor.draftRule;
-                                        if (!draft) {
-                                            return (
-                                                <Text style={styles.ruleHelpText}>
-                                                    This message will always cycle on schedule.
-                                                </Text>
-                                            );
-                                        }
-                                        if (draft.type === 'mainList') {
-                                            return (
-                                                <Text style={styles.ruleHelpText}>
-                                                    Pauses for the rest of today whenever any task in
-                                                    {' "'}{currentMainList}{'" '}is completed.
-                                                </Text>
-                                            );
-                                        }
-                                        if (draft.type === 'sideList') {
-                                            return (
-                                                <FlatList
-                                                    data={currentMainData?.sideLists ?? []}
-                                                    keyExtractor={(s) => s.listName}
-                                                    renderItem={({ item }) => {
-                                                        const selected = draft.sideListName === item.listName;
-                                                        return (
-                                                            <TouchableOpacity
-                                                                style={styles.rulePickerRow}
-                                                                onPress={() => {
-                                                                    selection();
-                                                                    setMessageEditor((r) => ({
-                                                                        ...r,
-                                                                        draftRule: { type: 'sideList', sideListName: item.listName },
-                                                                    }));
-                                                                }}
-                                                            >
-                                                                <Text style={styles.rulePickerText} numberOfLines={1}>
-                                                                    {item.listName}
-                                                                </Text>
-                                                                {selected ? (
-                                                                    <SymbolView name="checkmark" size={20} tintColor="#a5b4fc" />
-                                                                ) : null}
-                                                            </TouchableOpacity>
-                                                        );
-                                                    }}
-                                                    ListEmptyComponent={
-                                                        <Text style={styles.ruleHelpText}>No side lists in this main list.</Text>
-                                                    }
-                                                />
-                                            );
-                                        }
-                                        if (draft.type === 'task') {
-                                            const rows = (currentMainData?.sideLists ?? []).flatMap((sl) => {
-                                                const header = [{ kind: 'header', listName: sl.listName }];
-                                                const tasks = sl.tasks.map((t) => ({ kind: 'task', task: t, listName: sl.listName }));
-                                                return [...header, ...tasks];
-                                            });
-                                            return (
-                                                <FlatList
-                                                    data={rows}
-                                                    keyExtractor={(item, i) =>
-                                                        item.kind === 'task'
-                                                            ? `t-${item.listName}-${item.task.id}`
-                                                            : `h-${item.listName}-${i}`
-                                                    }
-                                                    renderItem={({ item }) => {
-                                                        if (item.kind === 'header') {
-                                                            return <Text style={styles.rulePickerHeader}>{item.listName}</Text>;
-                                                        }
-                                                        const selected =
-                                                            draft.taskId === item.task.id &&
-                                                            draft.sideListName === item.listName;
-                                                        return (
-                                                            <TouchableOpacity
-                                                                style={styles.rulePickerRow}
-                                                                onPress={() => {
-                                                                    selection();
-                                                                    setMessageEditor((r) => ({
-                                                                        ...r,
-                                                                        draftRule: {
-                                                                            type: 'task',
-                                                                            taskId: item.task.id,
-                                                                            sideListName: item.listName,
-                                                                        },
-                                                                    }));
-                                                                }}
-                                                            >
-                                                                <Text style={styles.rulePickerText} numberOfLines={1}>
-                                                                    {item.task.taskName}
-                                                                </Text>
-                                                                {selected ? (
-                                                                    <SymbolView name="checkmark" size={20} tintColor="#a5b4fc" />
-                                                                ) : null}
-                                                            </TouchableOpacity>
-                                                        );
-                                                    }}
-                                                    ListEmptyComponent={
-                                                        <Text style={styles.ruleHelpText}>No tasks in this main list.</Text>
-                                                    }
-                                                />
-                                            );
-                                        }
-                                        return null;
-                                    })()}
-                                </View>
-                            </GlassCard>
-
-                            <GlassCard
-                                style={styles.buttonWrapper}
-                                colorScheme="dark"
-                                tintColor="rgba(46, 46, 80, 0.45)"
-                            >
-                                {(() => {
-                                    const canSave = (messageEditor.draftBody ?? '').trim().length > 0;
-                                    return (
-                                        <TouchableOpacity
-                                            onPress={handleSaveMessage}
-                                            disabled={!canSave}
-                                            style={!canSave && { opacity: 0.4 }}
-                                        >
-                                            <SymbolView name="checkmark.circle.fill" size={60} tintColor="white" />
-                                        </TouchableOpacity>
-                                    );
-                                })()}
-                            </GlassCard>
-                            </KeyboardAvoidingView>
-                        </SafeAreaView>
-                    </Modal>
-                    </Modal>
-
-                    <Modal visible={taskEditor.visible} animationType="slide" transparent={true}>
-                        <SafeAreaView style={{ flex: 1 }}>
-                            <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-                                <GlassCard
-                                    style={styles.modalContent}
-                                    colorScheme="dark"
-                                    tintColor="rgba(46, 46, 80, 0.45)"
-                                >
-                                    <ScrollView
-                                        keyboardShouldPersistTaps="handled"
-                                        contentContainerStyle={{ paddingBottom: 16 }}
-                                        showsVerticalScrollIndicator={false}
-                                    >
-                                    <Text style={styles.settingsTitle}>Edit task</Text>
-
-                                    <Text style={styles.ruleSectionLabel}>Name</Text>
-                                    <TextInput
-                                        style={styles.taskEditorNameInput}
-                                        value={taskEditor.draftName}
-                                        onChangeText={(text) =>
-                                            setTaskEditor((r) => ({ ...r, draftName: text }))
-                                        }
-                                        placeholder="Task name"
-                                        placeholderTextColor="rgba(255,255,255,0.5)"
-                                        returnKeyType="done"
-                                    />
-
-                                    <Text style={styles.ruleSectionLabel}>Notes</Text>
-                                    <TextInput
-                                        style={styles.messageEditorInput}
-                                        value={taskEditor.draftNotes}
-                                        onChangeText={(text) =>
-                                            setTaskEditor((r) => ({ ...r, draftNotes: text }))
-                                        }
-                                        placeholder="Optional notes"
-                                        placeholderTextColor="rgba(255,255,255,0.5)"
-                                        multiline
-                                    />
-
-                                    <Text style={styles.ruleSectionLabel}>Variables</Text>
-                                    {taskEditor.draftVariables.map((v, idx) => (
-                                        <View style={styles.variableRow} key={`var-${idx}`}>
-                                            <TextInput
-                                                style={styles.variableNameInput}
-                                                value={v.name}
-                                                onChangeText={(text) =>
-                                                    setTaskEditor((r) => ({
-                                                        ...r,
-                                                        draftVariables: r.draftVariables.map((x, i) =>
-                                                            i === idx ? { ...x, name: text } : x
-                                                        ),
-                                                    }))
-                                                }
-                                                placeholder="Name"
-                                                placeholderTextColor="rgba(255,255,255,0.5)"
-                                            />
-                                            <TextInput
-                                                style={styles.variableValueInput}
-                                                value={v.lastValue}
-                                                onChangeText={(text) =>
-                                                    setTaskEditor((r) => ({
-                                                        ...r,
-                                                        draftVariables: r.draftVariables.map((x, i) =>
-                                                            i === idx ? { ...x, lastValue: text } : x
-                                                        ),
-                                                    }))
-                                                }
-                                                placeholder="Value"
-                                                placeholderTextColor="rgba(255,255,255,0.5)"
-                                            />
-                                            <TouchableOpacity
-                                                onPress={() => {
-                                                    tapLight();
-                                                    setTaskEditor((r) => ({
-                                                        ...r,
-                                                        draftVariables: r.draftVariables.filter((_, i) => i !== idx),
-                                                    }));
-                                                }}
-                                            >
-                                                <SymbolView name="minus.circle.fill" size={22} tintColor="rgba(255,180,180,0.9)" />
-                                            </TouchableOpacity>
-                                        </View>
-                                    ))}
-                                    <TouchableOpacity
-                                        style={styles.addVariableRow}
-                                        onPress={() => {
-                                            tapLight();
-                                            setTaskEditor((r) => ({
-                                                ...r,
-                                                draftVariables: [...r.draftVariables, { name: '', lastValue: '' }],
-                                            }));
-                                        }}
-                                    >
-                                        <SymbolView name="plus.circle.fill" size={22} tintColor="white" />
-                                        <Text style={styles.addVariableText}>Add variable</Text>
-                                    </TouchableOpacity>
-
-                                    <Text style={styles.ruleSectionLabel}>Tags</Text>
-                                    {taskEditor.draftTags.length > 0 ? (
-                                        <View style={styles.tagChipsWrap}>
-                                            {taskEditor.draftTags.map((t, idx) => (
-                                                <View style={styles.tagChip} key={`tag-${idx}`}>
-                                                    <Text style={styles.tagChipText} numberOfLines={1}>{t}</Text>
-                                                    <TouchableOpacity
-                                                        onPress={() => {
-                                                            tapLight();
-                                                            setTaskEditor((r) => ({
-                                                                ...r,
-                                                                draftTags: r.draftTags.filter((_, i) => i !== idx),
-                                                            }));
-                                                        }}
-                                                    >
-                                                        <SymbolView name="xmark.circle.fill" size={16} tintColor="rgba(255,255,255,0.7)" />
-                                                    </TouchableOpacity>
-                                                </View>
-                                            ))}
-                                        </View>
-                                    ) : null}
-                                    <View style={styles.tagInputRow}>
-                                        <TextInput
-                                            style={styles.tagInput}
-                                            value={tagInputDraft}
-                                            onChangeText={setTagInputDraft}
-                                            placeholder="New tag"
-                                            placeholderTextColor="rgba(255,255,255,0.5)"
-                                            onSubmitEditing={addTagFromInput}
-                                            returnKeyType="done"
-                                            autoCapitalize="none"
-                                            autoCorrect={false}
-                                        />
-                                        <TouchableOpacity onPress={addTagFromInput}>
-                                            <SymbolView name="plus.circle.fill" size={28} tintColor="white" />
-                                        </TouchableOpacity>
-                                    </View>
-
-                                    {(taskEditor.creationTime || taskEditor.completedAt) ? (
-                                        <View style={styles.taskEditorMeta}>
-                                            {taskEditor.creationTime ? (
-                                                <Text style={styles.taskEditorMetaText}>
-                                                    Added {moment(taskEditor.creationTime).fromNow()}
-                                                </Text>
-                                            ) : null}
-                                            {taskEditor.completedAt ? (
-                                                <Text style={styles.taskEditorMetaText}>
-                                                    Last completed {moment(taskEditor.completedAt).fromNow()}
-                                                </Text>
-                                            ) : null}
-                                        </View>
-                                    ) : null}
-
-                                    {(() => {
-                                        const others = (currentMainData?.sideLists ?? []).filter(
-                                            (s) => s.listName !== currentList
-                                        );
-                                        if (others.length === 0) return null;
-                                        return (
-                                            <>
-                                                <Text style={styles.ruleSectionLabel}>Move to</Text>
-                                                {others.map((item) => (
-                                                    <TouchableOpacity
-                                                        key={item.listName}
-                                                        style={styles.rulePickerRow}
-                                                        onPress={() => handleMoveTaskTo(item.listName)}
-                                                    >
-                                                        <Text style={styles.rulePickerText} numberOfLines={1}>
-                                                            {item.listName}
-                                                        </Text>
-                                                        <SymbolView
-                                                            name="arrow.right.circle.fill"
-                                                            size={22}
-                                                            tintColor="rgba(255,255,255,0.6)"
-                                                        />
-                                                    </TouchableOpacity>
-                                                ))}
-                                            </>
-                                        );
-                                    })()}
-                                    </ScrollView>
-                                </GlassCard>
-
-                                <GlassCard
-                                    style={styles.buttonWrapper}
-                                    colorScheme="dark"
-                                    tintColor="rgba(46, 46, 80, 0.45)"
-                                >
-                                    <TouchableOpacity onPress={handleCloseTaskEditor}>
-                                        <SymbolView name="xmark.circle.fill" size={60} tintColor="white" />
-                                    </TouchableOpacity>
-                                    {(() => {
-                                        const canSave = (taskEditor.draftName ?? '').trim().length > 0;
-                                        return (
-                                            <TouchableOpacity
-                                                onPress={handleSaveTask}
-                                                disabled={!canSave}
-                                                style={!canSave && { opacity: 0.4 }}
-                                            >
-                                                <SymbolView name="checkmark.circle.fill" size={60} tintColor="white" />
-                                            </TouchableOpacity>
-                                        );
-                                    })()}
-                                </GlassCard>
-                            </KeyboardAvoidingView>
-                        </SafeAreaView>
-                    </Modal>
+                    <TaskEditorModal
+                        editor={taskEditor}
+                        setEditor={setTaskEditor}
+                        tagInputDraft={tagInputDraft}
+                        onChangeTagInput={setTagInputDraft}
+                        onAddTag={addTagFromInput}
+                        onClose={handleCloseTaskEditor}
+                        onSave={handleSaveTask}
+                        onMoveTo={handleMoveTaskTo}
+                        sideLists={currentMainData?.sideLists ?? []}
+                        currentList={currentList}
+                    />
 
                     <Modal visible={completionLogger.visible} animationType="slide" transparent={true}>
                         <SafeAreaView style={{ flex: 1 }}>
@@ -1767,68 +1319,6 @@ const styles = StyleSheet.create({
         marginBottom: 12,
         fontSize: 13,
     },
-    messageRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingVertical: 10,
-        paddingHorizontal: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: 'rgba(255,255,255,0.15)',
-    },
-    messageRowLeft: {
-        flex: 1,
-        marginRight: 12,
-    },
-    messageText: {
-        color: 'white',
-    },
-    ruleChipText: {
-        color: '#a5b4fc',
-        fontSize: 12,
-        marginTop: 4,
-    },
-    ruleChipDim: {
-        color: 'rgba(255,255,255,0.45)',
-    },
-    ruleChipWarn: {
-        color: 'rgba(255, 200, 120, 0.95)',
-    },
-    ruleChipActive: {
-        color: '#86efac',
-    },
-    ruleSegments: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginHorizontal: 16,
-        marginBottom: 12,
-        gap: 6,
-    },
-    ruleSegment: {
-        flex: 1,
-        paddingVertical: 8,
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.25)',
-        alignItems: 'center',
-    },
-    ruleSegmentActive: {
-        backgroundColor: 'rgba(165, 180, 252, 0.25)',
-        borderColor: '#a5b4fc',
-    },
-    ruleSegmentText: {
-        color: 'rgba(255,255,255,0.7)',
-        fontSize: 13,
-    },
-    ruleSegmentTextActive: {
-        color: 'white',
-        fontWeight: '600',
-    },
-    ruleEditorBody: {
-        flex: 1,
-        marginHorizontal: 16,
-        marginBottom: 16,
-    },
     ruleSectionLabel: {
         color: 'rgba(255,255,255,0.55)',
         fontSize: 11,
@@ -1837,17 +1327,6 @@ const styles = StyleSheet.create({
         marginHorizontal: 16,
         marginTop: 8,
         marginBottom: 8,
-    },
-    messageEditorInput: {
-        color: 'white',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.4)',
-        borderRadius: 10,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        marginHorizontal: 16,
-        marginBottom: 12,
-        minHeight: 44,
     },
     taskEditorNameInput: {
         color: 'white',
@@ -1858,89 +1337,6 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         marginHorizontal: 16,
         marginBottom: 12,
-    },
-    taskEditorMeta: {
-        marginHorizontal: 16,
-        marginTop: 4,
-        marginBottom: 12,
-        gap: 4,
-    },
-    taskEditorMetaText: {
-        color: 'rgba(255,255,255,0.55)',
-        fontSize: 12,
-    },
-    variableRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginHorizontal: 16,
-        marginBottom: 8,
-        gap: 10,
-    },
-    variableNameInput: {
-        flex: 1.4,
-        color: 'white',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.4)',
-        borderRadius: 10,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-    },
-    variableValueInput: {
-        flex: 1,
-        color: 'white',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.4)',
-        borderRadius: 10,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-    },
-    addVariableRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginHorizontal: 16,
-        marginBottom: 12,
-        gap: 8,
-        paddingVertical: 6,
-    },
-    addVariableText: {
-        color: 'white',
-        fontSize: 14,
-    },
-    tagChipsWrap: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 6,
-        marginHorizontal: 16,
-        marginBottom: 8,
-    },
-    tagChip: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        backgroundColor: 'rgba(255,255,255,0.12)',
-        borderRadius: 14,
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-    },
-    tagChipText: {
-        color: 'white',
-        fontSize: 13,
-    },
-    tagInputRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginHorizontal: 16,
-        marginBottom: 12,
-        gap: 10,
-    },
-    tagInput: {
-        flex: 1,
-        color: 'white',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.4)',
-        borderRadius: 10,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
     },
     tagFilterStrip: {
         flexDirection: 'row',
@@ -1979,57 +1375,11 @@ const styles = StyleSheet.create({
         color: 'rgba(15, 15, 36, 0.95)',
         fontWeight: '600',
     },
-    ruleHelpText: {
-        color: 'rgba(255,255,255,0.7)',
-        textAlign: 'center',
-        paddingVertical: 24,
-        fontSize: 13,
-    },
-    rulePickerRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingVertical: 12,
-        paddingHorizontal: 12,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: 'rgba(255,255,255,0.12)',
-    },
-    rulePickerText: {
-        color: 'white',
-        flex: 1,
-        marginRight: 12,
-    },
-    rulePickerHeader: {
-        color: 'rgba(255,255,255,0.55)',
-        fontSize: 11,
-        textTransform: 'uppercase',
-        letterSpacing: 1.2,
-        marginTop: 14,
-        marginBottom: 4,
-        paddingHorizontal: 12,
-    },
     messagesEmpty: {
         color: 'rgba(255,255,255,0.6)',
         textAlign: 'center',
         paddingVertical: 24,
         fontStyle: 'italic',
-    },
-    messageInputRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 12,
-        marginHorizontal: 16,
-        marginBottom: 16,
-        gap: 10,
-    },
-    messageInput: {
-        flex: 1,
-        color: 'white',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.4)',
-        borderRadius: 10,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
     },
     scheduledHeader: {
         flexDirection: 'row',
