@@ -3,6 +3,7 @@ import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { log } from './logger';
+import { isInQuietHours, isRuleActive, computeStaggerOffsetMs } from '../utils/notificationRules';
 
 // Configure notifications to show when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -13,46 +14,6 @@ Notifications.setNotificationHandler({
     shouldSetBadge: true,
   }),
 });
-
-const isInQuietHours = (date, startMin, endMin) => {
-  if (startMin === endMin) return false;
-  const minOfDay = date.getHours() * 60 + date.getMinutes();
-  if (startMin < endMin) {
-    return minOfDay >= startMin && minOfDay < endMin;
-  }
-  return minOfDay >= startMin || minOfDay < endMin;
-};
-
-const startOfDayMs = (d) => {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x.getTime();
-};
-
-const isRuleActive = (rule, sourceMainList, triggerDate, armedAt) => {
-  if (!rule || !sourceMainList) return false;
-  const dayStart = startOfDayMs(triggerDate);
-  const armed = armedAt ? new Date(armedAt).getTime() : 0;
-  const lowerBound = Math.max(dayStart, armed);
-  const dayEnd = triggerDate.getTime();
-  const hitWindow = (ts) => {
-    const t = ts ? new Date(ts).getTime() : 0;
-    return t >= lowerBound && t < dayEnd;
-  };
-  if (rule.type === 'task') {
-    const sl = sourceMainList.sideLists?.find((s) => s.listName === rule.sideListName);
-    const task = sl?.tasks?.find((t) => t.id === rule.taskId);
-    return hitWindow(task?.completedAt);
-  }
-  if (rule.type === 'sideList') {
-    const sl = sourceMainList.sideLists?.find((s) => s.listName === rule.sideListName);
-    return hitWindow(sl?.lastCompletedAt);
-  }
-  if (rule.type === 'mainList') {
-    return (sourceMainList.sideLists ?? []).some((sl) => hitWindow(sl.lastCompletedAt));
-  }
-  return false;
-};
 
 export default class NotificationService {
   static RECURRING_NOTIFICATIONS_KEY = 'recurringNotificationIds';
@@ -329,8 +290,7 @@ export default class NotificationService {
       for (const fm of flatMessages) {
         const idx = groupSeen.get(fm.intervalMinutes) ?? 0;
         const total = groupTotals.get(fm.intervalMinutes);
-        const intervalMs = fm.intervalMinutes * 60 * 1000;
-        fm.staggerOffsetMs = total > 1 ? Math.round((idx * intervalMs) / total) : 0;
+        fm.staggerOffsetMs = computeStaggerOffsetMs(idx, total, fm.intervalMinutes);
         groupSeen.set(fm.intervalMinutes, idx + 1);
       }
 
