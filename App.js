@@ -25,7 +25,7 @@ export default function App() {
     const initializeNotifications = async () => {
       try {
         log('🔔 APP.JS: Starting notification initialization...');
-        const token = await NotificationService.registerForPushNotificationsAsync();
+        await NotificationService.requestNotificationPermissions();
         await NotificationService.initializeBackgroundNotifications();
 
         const notificationsEnabled = await NotificationService.getNotificationsEnabled();

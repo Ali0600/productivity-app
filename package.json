@@ -1,6 +1,6 @@
 {
   "name": "adhd-habits",
-  "version": "1.0.35",
+  "version": "1.0.36",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
@@ -21,7 +21,6 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "babel-preset-expo": "~54.0.10",
     "expo": "~54.0.34",
-    "expo-background-fetch": "~14.0.9",
     "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.13",
     "expo-dev-client": "~6.0.21",
@@ -34,13 +33,11 @@
     "expo-sharing": "~14.0.8",
     "expo-status-bar": "~3.0.9",
     "expo-symbols": "~1.0.8",
-    "expo-task-manager": "~14.0.9",
     "expo-updates": "~29.0.17",
     "moment": "^2.29.4",
     "react": "19.1.0",
     "react-native": "0.81.5",
     "react-native-draggable-flatlist": "^4.0.2",
-    "react-native-element-dropdown": "^2.9.0",
     "react-native-gesture-handler": "~2.28.0",
     "react-native-reanimated": "~4.1.1",
     "react-native-worklets": "0.5.1"

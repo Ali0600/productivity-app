@@ -22,7 +22,7 @@ import moment from "moment";
 import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useAppState, useLists, useListTasks, useAppLoading, useMainLists } from '../hooks/useAppState';
+import { useLists, useListTasks, useAppLoading, useMainLists } from '../hooks/useAppState';
 import { tapLight, selection, warning, success } from '../services/haptics';
 import { log } from '../services/logger';
 import { makeId } from '../utils/id';
@@ -121,7 +121,6 @@ function Homepage(props){
     const { mainLists, currentMainList, currentMainData, exitToTileGrid, replaceMainLists, setNotificationMessages } = useMainLists();
     const {
         addTaskToList,
-        reorderTasksInList,
         removeTaskFromList,
         updateTaskInList,
         moveTaskFromList,

@@ -1,6 +1,5 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { log } from './logger';
 import { isInQuietHours, isRuleActive, computeStaggerOffsetMs } from '../utils/notificationRules';
@@ -103,7 +102,7 @@ export default class NotificationService {
   static handleNotificationResponse = (response) => {
     log('Notification response received:', response);
     
-    const { notification, userText } = response;
+    const { notification } = response;
     log('User tapped on notification:', notification.request.content.title);
     
     // Handle the notification tap
@@ -125,79 +124,30 @@ export default class NotificationService {
   };
 
   /**
-   * Register for push notifications
-   * @returns {Promise<string|null>} Expo push token or null if not available
+   * Request permission to post notifications. Every reminder is scheduled
+   * on-device, so no Expo push token is fetched.
+   * @returns {Promise<boolean>} whether notifications are permitted
    */
-  static async registerForPushNotificationsAsync() {
-    let token = null;
-    
-    //#if (Platform.OS === 'android') {
-    //  // Set notification channel for Android
-    //  await Notifications.setNotificationChannelAsync('task-reminders', {
-    //    name: 'Task Reminders',
-    //    importance: Notifications.AndroidImportance.MAX,
-    //    vibrationPattern: [0, 250, 250, 250],
-    //    lightColor: '#FF231F7C',
-    //  });
-    //}
-
-    if (Device.isDevice) {
-      // Check if we have permission
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-      
-      // If we don't have permission, ask for it
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-        log('Notification permission status:', finalStatus);
-      }
-      
-      // If we still don't have permission, we can't send notifications
-      if (finalStatus !== 'granted') {
-        log('Failed to get push token for push notification!');
-        return null;
-      }
-      
-      try {
-        // Get the token
-        token = (await Notifications.getExpoPushTokenAsync({
-          projectId: Constants.expoConfig.extra?.eas?.projectId,
-        })).data;
-        log("Successfully obtained push token:", token);
-      } catch (tokenError) {
-        console.error("Error getting push token:", tokenError);
-        // Continue without a token, but at least don't crash
-      }
-    } else {
-      log('Must use physical device for Push Notifications');
+  static async requestNotificationPermissions() {
+    if (!Device.isDevice) {
+      log('Notifications require a physical device');
+      return false;
     }
 
-    return token;
-  }
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
 
-  /**
-   * Send an immediate notification
-   * @param {string} title - Notification title
-   * @param {string} body - Notification body
-   * @returns {Promise<string|null>} - Notification ID or null if failed
-   */
-  static async sendImmediateNotification(title, body) {
-    try {
-      const notificationId = await Notifications.scheduleNotificationAsync({
-        content: {
-          title,
-          body,
-          sound: true,
-        },
-        trigger: null, // Null trigger means send immediately
-      });
-      
-      return notificationId;
-    } catch (error) {
-      console.error('Error sending immediate notification:', error);
-      return null;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+      log('Notification permission status:', finalStatus);
     }
+
+    if (finalStatus !== 'granted') {
+      log('Notification permission denied; reminders will not fire.');
+      return false;
+    }
+    return true;
   }
 
   static async getUpcomingNotifications() {
@@ -350,35 +300,4 @@ export default class NotificationService {
     }
   }
 
-  /**
-   * Get status of recurring notifications
-   * @returns {Promise<Object>} - Status object with count and next notification time
-   */
-  static async getRecurringNotificationStatus() {
-    try {
-      const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
-      const recurringNotifications = scheduledNotifications.filter(
-        notification => notification.content.data?.type === 'recurring_reminder'
-      );
-      
-      let nextNotificationTime = null;
-      if (recurringNotifications.length > 0) {
-        const nextNotification = recurringNotifications.reduce((earliest, current) => {
-          const currentTime = current.trigger?.date || current.trigger?.dateComponents;
-          const earliestTime = earliest.trigger?.date || earliest.trigger?.dateComponents;
-          return currentTime < earliestTime ? current : earliest;
-        });
-        nextNotificationTime = nextNotification.trigger?.date || nextNotification.trigger?.dateComponents;
-      }
-      
-      return {
-        count: recurringNotifications.length,
-        nextNotificationTime,
-        isActive: recurringNotifications.length > 0,
-      };
-    } catch (error) {
-      console.error('Error getting recurring notification status:', error);
-      return { count: 0, nextNotificationTime: null, isActive: false };
-    }
-  }
 }
