@@ -26,6 +26,22 @@ A TestFlight build stops launching 90 days after upload — it shows "Beta has e
 
 **Takeaway:** TestFlight is a 90-day lease, not a distribution channel. Plan on a rebuild each quarter, or switch to internal/ad-hoc distribution (~1 year, governed by the provisioning profile) or an App Store release (no expiry). And note the sequencing: because `runtimeVersion` follows `appVersion`, bumping the version means OTAs now publish at a runtime that only the *new* build has — so the bump and the build must travel together.
 
+## Some iOS capabilities are gated by Apple approval, not just by code
+
+Most iOS features ship the moment you write them. A handful — Family Controls (Screen Time), CarPlay, HealthKit clinical records — require you to *apply* to Apple for the entitlement and wait for a human to approve it, per bundle ID. Until then, a distribution build (TestFlight or App Store) cannot be signed at all.
+
+**Why it came up:** The Focus Gate needs `com.apple.developer.family-controls`. Our config generates three extensions on top of the main app, so **four** bundle IDs each need approval. The development entitlement keeps working meanwhile, so local/dev builds can proceed in parallel.
+
+**Takeaway:** When scoping a feature against an unfamiliar iOS capability, check whether it needs an entitlement *request* before estimating anything — the approval wait can dwarf the implementation, so file it on day one and build against the development entitlement while you wait.
+
+## Evaluate config plugins before you pay for a build
+
+`npx expo config --type public` runs the config-plugin chain locally in seconds. `npx expo export` bundles the JS the same way a real build would. Between them they catch most "the build died 40 minutes in" failures for free.
+
+**Why it came up:** Adding `react-native-device-activity` failed immediately with `Cannot find module '@expo/prebuild-config/...'` — its transitive `@kingstinct/expo-apple-targets` requires that package but declares it as neither a dependency nor a peer, relying on hoisting that SDK 54's nesting doesn't provide (the only copy lives under `expo/node_modules/@expo/cli/node_modules/`). Fix: install `@expo/prebuild-config` at top level, pinned to the version the SDK ships. Caught in ~30 seconds instead of after a queued cloud build.
+
+**Takeaway:** After adding any config plugin, run `expo config` then `expo export` before `eas build`. Also: a mod-based plugin's effects (`withEntitlementsPlist` and friends) do **not** appear in `expo config --type public` — mods only run during prebuild, so an entitlement missing from that output is not evidence of a bug.
+
 ## Swipeable gestures: `direction` means the swipe motion, not the panel
 
 `react-native-gesture-handler` has two generations of swipe-row components with **opposite `onSwipeableOpen` semantics**. The legacy `Swipeable` reported which action *panel* opened ('left' = left panel, revealed by swiping right). The current `ReanimatedSwipeable` (what this app uses in `Task.js` / `List.js`) reports the swipe *motion* direction ('right' = user swiped right, which reveals `renderLeftActions`). Same argument name, inverted meaning.

@@ -24,8 +24,12 @@ that nudges without nagging. Built with React Native + Expo and shipped to TestF
   3-level data model (main lists → side lists → tasks) driving a staleness-aware bento home screen.
 - **Crafted a Liquid Glass UI** (`expo-glass-effect`) on a dark gradient with haptics, swipe-to-
   complete/delete gestures, and drag-to-reorder lists.
+- **Integrated Apple's Screen Time APIs** (FamilyControls / ManagedSettings / DeviceActivity) to
+  build a "Focus Gate" that blocks chosen apps until a task list is completed for the day, with a
+  native background schedule that re-arms the block each morning without the app being launched.
 - **Automated dependency hygiene** with Dependabot (grouped Expo/React Native updates) and
-  enforced code quality with ESLint (flat config) + Prettier.
+  enforced code quality with ESLint (flat config) + Prettier, plus a Jest suite gating OTA releases
+  in CI.
 
 ## Tech Stack
 
@@ -110,6 +114,26 @@ app/
 ```
 
 See [CLAUDE.md](CLAUDE.md) for the full architecture, data model, and UI conventions.
+
+## Experience Gained
+
+Skills and practices this project demonstrates:
+
+- **Mobile CI/CD** — GitHub Actions pipeline that lints and unit-tests every push/PR and gates an
+  over-the-air release on both passing, with EAS Build/Update/Submit for binary distribution.
+- **Release engineering on a constrained platform** — runtime-version pinning so OTA bundles only
+  reach compatible binaries, plus handling of TestFlight's 90-day build expiry and Apple's
+  approval-gated entitlements as scheduling constraints rather than surprises.
+- **Native platform integration** — Apple Screen Time (FamilyControls, ManagedSettings,
+  DeviceActivity) via an Expo config plugin with app-group-shared extensions, defensively loaded so
+  a build lacking the native module degrades instead of crashing.
+- **Test design** — pure decision logic extracted from UI and native side effects, then proven by
+  deliberately breaking each guard and confirming the suite catches it.
+- **Fail-safe defaults** — enforcement paths that fail open, so a deleted or renamed dependency can
+  never strand a user behind a block they cannot clear.
+- **Local-first data engineering** — AsyncStorage-backed model with debounced persistence, schema
+  normalization on load, validated backup import/export, and an append-only completion history
+  driving streaks and analytics.
 
 ## License
 
