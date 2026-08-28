@@ -6,7 +6,7 @@ export default ({ config }) => {
     expo: {
       name: "ADHD Habits",
       slug: "adhd-habits",
-      version: "1.0.36",
+      version: "1.0.37",
       orientation: "portrait",
       icon: "./app/assets/icon.png",
       userInterfaceStyle: "light",
@@ -54,6 +54,27 @@ export default ({ config }) => {
             icon: "./app/assets/icon.png",
             color: "#ffffff",
             sounds: []
+          }
+        ],
+        [
+          "expo-build-properties",
+          {
+            // react-native-device-activity (Screen Time APIs) needs iOS 15.1+.
+            // Note: the individual/self-managed authorization the Focus Gate
+            // uses requires iOS 16+ at runtime.
+            ios: {
+              deploymentTarget: "15.1"
+            }
+          }
+        ],
+        [
+          "react-native-device-activity",
+          {
+            appleTeamId: "FUUHGS7ACN",
+            // Shared container the app and the Screen Time extensions use to
+            // exchange the selection/shield config. Same group for both app
+            // variants so a dev build sees the same setup.
+            appGroup: "group.com.mhassan0600.adhd-habits.screentime"
           }
         ]
       ]

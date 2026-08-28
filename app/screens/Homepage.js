@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { View, StyleSheet, Text, Modal, SafeAreaView, TouchableOpacity, TextInput, KeyboardAvoidingView, FlatList, ActivityIndicator, ActionSheetIOS, Alert, Switch } from "react-native";
+import { View, StyleSheet, Text, Modal, SafeAreaView, TouchableOpacity, TextInput, KeyboardAvoidingView, FlatList, ActivityIndicator, ActionSheetIOS, Alert, Switch, AppState } from "react-native";
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -32,6 +32,9 @@ import TagRecovery from '../components/TagRecovery';
 import CompletionBurst from '../components/CompletionBurst';
 import MessagesModal from '../components/modals/MessagesModal';
 import TaskEditorModal from '../components/modals/TaskEditorModal';
+import FocusGateModal from '../components/modals/FocusGateModal';
+import { evaluateGate, DEFAULT_GATE_CONFIG } from '../utils/focusGate';
+import * as FocusGate from '../services/focusGateService';
 
 const TIME_OF_DAY_VALUES = Array.from({ length: 48 }, (_, i) => i * 30);
 
@@ -100,6 +103,12 @@ function Homepage(props){
     });
     // Incremented per completion; keys a remount of the one-shot burst animation.
     const [burstCount, setBurstCount] = useState(0);
+    const [focusGateVisible, setFocusGateVisible] = useState(false);
+    const [gateConfig, setGateConfig] = useState(DEFAULT_GATE_CONFIG);
+    const [gateSupported, setGateSupported] = useState(false);
+    const [gateAuthStatus, setGateAuthStatus] = useState(FocusGate.AUTH_STATUS.notDetermined);
+    const [gateHasSelection, setGateHasSelection] = useState(false);
+    const [gateShieldActive, setGateShieldActive] = useState(false);
 
     useEffect(() => {
         NotificationService.getNotificationsEnabled().then(setNotificationsEnabled);
@@ -115,6 +124,18 @@ function Homepage(props){
         await NotificationService.setNotificationsEnabled(next);
     }, []);
 
+    // --- Focus Gate ---------------------------------------------------------
+
+    useEffect(() => {
+        const supported = FocusGate.isSupported();
+        setGateSupported(supported);
+        if (supported) {
+            setGateAuthStatus(FocusGate.getAuthorizationStatus());
+            setGateHasSelection(FocusGate.hasSelection());
+        }
+        FocusGate.loadGateConfig().then(setGateConfig);
+    }, []);
+
     // Use our custom hooks
     const { isLoading, error } = useAppLoading();
     const { lists, currentList, currentListData, addList, removeList, switchList, updateLists, moveSideList } = useLists();
@@ -126,6 +147,70 @@ function Homepage(props){
         moveTaskFromList,
         completeTaskInList,
     } = useListTasks(currentList);
+
+    // Apply the gate's decision. Idempotent, so it is safe to run on every
+    // completion, foreground and config change.
+    const syncGate = useCallback((config) => {
+        if (!FocusGate.isSupported()) return;
+        const { shouldBlock, reason } = evaluateGate(config ?? gateConfig, mainLists);
+        FocusGate.applyBlock(shouldBlock, reason);
+        setGateShieldActive(FocusGate.isShieldActive());
+    }, [gateConfig, mainLists]);
+
+    // Re-evaluate whenever the data or the config changes. This single effect
+    // covers task completion, task/list deletion, and a backup import — all of
+    // which land as a new mainLists reference.
+    useEffect(() => {
+        syncGate();
+    }, [syncGate]);
+
+    // The day rolling over past midnight changes the answer without changing
+    // any data, so re-evaluate when the app returns to the foreground.
+    useEffect(() => {
+        const sub = AppState.addEventListener('change', (next) => {
+            if (next === 'active') {
+                if (FocusGate.isSupported()) {
+                    setGateAuthStatus(FocusGate.getAuthorizationStatus());
+                }
+                syncGate();
+            }
+        });
+        return () => sub.remove();
+    }, [syncGate]);
+
+    const handleOpenFocusGate = useCallback(() => {
+        tapLight();
+        setFocusGateVisible(true);
+        setSettingsVisible(false);
+    }, []);
+
+    const handleRequestGateAuth = useCallback(async () => {
+        tapLight();
+        const status = await FocusGate.requestAuthorization();
+        setGateAuthStatus(status);
+    }, []);
+
+    const handleGateSelectionChange = useCallback((event) => {
+        const nextSelection = event?.nativeEvent?.familyActivitySelection;
+        if (!nextSelection) return;
+        if (FocusGate.persistSelection(nextSelection)) {
+            setGateHasSelection(true);
+            syncGate();
+        }
+    }, [syncGate]);
+
+    const handleGateConfigChange = useCallback(async (next) => {
+        setGateConfig(next);
+        await FocusGate.saveGateConfig(next);
+        if (next.enabled) {
+            await FocusGate.scheduleDailyRearm(next.rearmHour);
+        } else {
+            // Stop the daily schedule AND lift any live shield, so disabling
+            // never strands the user behind a block nothing will clear.
+            FocusGate.teardown();
+        }
+        syncGate(next);
+    }, [syncGate]);
 
     const handleAddTask = () => {
         if (!task.trim()) return;
@@ -824,6 +909,16 @@ function Homepage(props){
                                 <SymbolView name="chevron.right" size={20} tintColor="white" />
                             </TouchableOpacity>
 
+                            <TouchableOpacity onPress={handleOpenFocusGate} style={styles.settingsRow}>
+                                <Text style={styles.settingsRowLabel}>Focus Gate</Text>
+                                <View style={styles.settingsRowValue}>
+                                    <Text style={styles.settingsValueText}>
+                                        {gateConfig.enabled ? 'On' : 'Off'}
+                                    </Text>
+                                    <SymbolView name="chevron.right" size={20} tintColor="white" />
+                                </View>
+                            </TouchableOpacity>
+
                             <TouchableOpacity onPress={handleExport} style={styles.settingsRow}>
                                 <Text style={styles.settingsRowLabel}>Export Data</Text>
                                 <SymbolView name="square.and.arrow.up" size={20} tintColor="white" />
@@ -1061,6 +1156,22 @@ function Homepage(props){
                             </GlassCard>
                         </SafeAreaView>
                     </Modal>
+
+                    <FocusGateModal
+                        visible={focusGateVisible}
+                        onClose={() => setFocusGateVisible(false)}
+                        supported={gateSupported}
+                        authStatus={gateAuthStatus}
+                        onRequestAuthorization={handleRequestGateAuth}
+                        config={gateConfig}
+                        onChangeConfig={handleGateConfigChange}
+                        hasSelection={gateHasSelection}
+                        onSelectionChange={handleGateSelectionChange}
+                        sideLists={lists}
+                        mainLists={mainLists}
+                        currentMainList={currentMainList}
+                        shieldActive={gateShieldActive}
+                    />
 
                     <SafeAreaView style={styles.productName}>
                         <GlassCard

@@ -3,16 +3,7 @@
 // yesterday — on which at least one task in the main list was completed.
 // "Ending yesterday" keeps this morning's streak alive before today's workout.
 
-const dayKey = (ms) => {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-};
-
-const toMs = (value) => {
-  if (!value) return null;
-  const t = new Date(value).getTime();
-  return Number.isFinite(t) ? t : null;
-};
+import { dayKey, toMs } from './dayKey';
 
 /**
  * @param {{ sideLists?: Array<{ tasks?: Array<{ completions?: Array<{ at: number }>, completedAt?: Date|string }> }> }} mainList
