@@ -15,9 +15,9 @@ that nudges without nagging. Built with React Native + Expo and shipped to TestF
 - **Designed and shipped a notification engine** with per-message reminder intervals, "pause" rules
   (mute reminders once a task / list / main-list is completed for the day), quiet hours, and
   even staggering of same-interval messages — all within iOS's 64-scheduled-notification limit.
-- **Built a CI/CD pipeline with GitHub Actions** that lints every push/PR and publishes
-  over-the-air (OTA) updates to users via EAS Update on merges to `main`, plus a manual-dispatch
-  EAS Build workflow for App Store binaries.
+- **Built a CI/CD pipeline with GitHub Actions** that lints and unit-tests every push/PR and
+  publishes over-the-air (OTA) updates via EAS Update on merges to `main` — gated on both checks
+  passing — plus a manual-dispatch EAS Build workflow for App Store binaries.
 - **Implemented an OTA update flow** with `expo-updates`, including an in-app "update ready" prompt
   and version-pinned runtime so JS-only changes ship in seconds without an App Store review.
 - **Engineered a local-first data layer** over AsyncStorage with debounced auto-persistence and a
@@ -36,10 +36,10 @@ that nudges without nagging. Built with React Native + Expo and shipped to TestF
 | Area | Tools |
 | --- | --- |
 | App | React Native 0.81, Expo SDK 54 (dev client), React Context |
-| Native modules | expo-notifications, expo-updates, expo-glass-effect, expo-symbols, reanimated, gesture-handler, draggable-flatlist |
+| Native modules | expo-notifications, expo-updates, expo-glass-effect, expo-symbols, reanimated, gesture-handler, draggable-flatlist, react-native-device-activity (Screen Time) |
 | Persistence | `@react-native-async-storage/async-storage` |
 | Build & deploy | EAS Build / Update / Submit |
-| CI/CD & quality | GitHub Actions, Dependabot, ESLint, Prettier |
+| CI/CD & quality | GitHub Actions, Dependabot, ESLint, Prettier, Jest (`jest-expo`) |
 
 ## Getting Started
 
@@ -78,9 +78,10 @@ Info.plist/entitlement edit) requires a new build **and** a version bump in `app
 
 Two workflows under [`.github/workflows`](.github/workflows):
 
-- **`ci.yml`** — runs ESLint on every push and pull request; on pushes to `main`, publishes an OTA
-  update with `eas update --auto`. The EAS step is skipped (not failed) until an `EXPO_TOKEN`
-  repo secret is configured.
+- **`ci.yml`** — runs ESLint and the Jest suite on every push and pull request; on pushes to
+  `main`, publishes an OTA update with `eas update --auto`, gated on **both** jobs passing
+  (`needs: [lint, test]`). The EAS step is skipped (not failed) until an `EXPO_TOKEN` repo secret
+  is configured.
 - **`eas-build.yml`** — manual (`workflow_dispatch`) EAS Build with platform/profile inputs.
 
 **To enable EAS steps:** add an `EXPO_TOKEN` secret
@@ -97,6 +98,7 @@ npm run lint          # ESLint
 npm run lint:fix      # ESLint with autofix
 npm run format        # Prettier write
 npm run format:check  # Prettier check (no writes)
+npm test              # Jest unit tests (jest-expo)
 ```
 
 ## Project Structure
@@ -104,12 +106,15 @@ npm run format:check  # Prettier check (no writes)
 ```
 App.js                      # Root: notification init, OTA check, renders TileGrid or Homepage
 app/
-  components/               # Tile, Task, List, GlassCard, IntervalSlider
+  components/               # Tile, Task, List, GlassCard, IntervalSlider, CompletionBurst
+    modals/                 # TaskEditor, Messages, FocusGate (extracted from Homepage)
   context/AppStateContext   # All app state + AsyncStorage persistence
   hooks/useAppState         # Thin hooks over the context
   screens/                  # TileGrid (home), Homepage (list view)
-  services/                 # StorageService, NotificationService, haptics, logger
-  utils/                    # id generator
+  services/                 # StorageService, NotificationService, focusGateService, haptics, logger
+  utils/                    # Pure helpers: id, dayKey, streaks, tagStats, focusGate, notificationRules
+    __tests__/              # Jest suites for the pure helpers
+targets/                    # Generated Screen Time extensions (Shield*, ActivityMonitor)
 .github/                    # CI workflows + Dependabot
 ```
 
