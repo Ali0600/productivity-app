@@ -49,3 +49,11 @@ Most iOS features ship the moment you write them. A handful — Family Controls 
 **Why it came up:** A fresh-eyes review "found" the swipe handlers cross-wired — trash icon on complete, checkmark on delete — by reasoning with the legacy semantics. Checking the installed package's source (`node_modules/.../ReanimatedSwipeable.tsx`: `toValue > 0 ? RIGHT : LEFT`) disproved it: the code was correct all along, and the proposed "fix" would have introduced the exact bug being reported. Only CLAUDE.md's gesture description was actually backwards (now corrected).
 
 **Takeaway:** Before declaring working code buggy against a remembered API contract, verify the semantics in the installed package's source or current docs — especially when a library ships a same-named successor component.
+
+## EAS capability sync can't enable approval-gated "Additional Capabilities"
+
+EAS Build auto-syncs ordinary capabilities (push, App Groups, Apple Pay…) onto your App IDs via the App Store Connect API. But approval-gated capabilities — Family Controls (Distribution) lives under a separate **Additional Capabilities** tab — are not exposed by that API at all, so EAS silently can't enable them. The provisioning profiles then get generated *without* the entitlement, and the build dies in Xcode signing with "profile doesn't support the Family Controls capability" for every affected target.
+
+**Why it came up:** First 1.0.37 production build failed exactly this way on all four targets, even though Apple had already approved the entitlement for the account. The approval unlocks the checkbox; it doesn't tick it. One consolation: the failed build still *registered* the three extension App IDs, which is what made ticking them possible at all.
+
+**Takeaway:** For an approval-gated capability the real flow is: request → wait for approval → **manually tick the capability under Additional Capabilities for every affected App ID** (main app + each extension) → rebuild so the invalidated provisioning profiles regenerate. Don't assume "EAS syncs capabilities" covers the gated ones — and if a rebuild reuses stale profiles, delete them via `eas credentials --platform ios` and build again.
