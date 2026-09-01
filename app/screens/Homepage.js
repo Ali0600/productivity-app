@@ -33,7 +33,7 @@ import CompletionBurst from '../components/CompletionBurst';
 import MessagesModal from '../components/modals/MessagesModal';
 import TaskEditorModal from '../components/modals/TaskEditorModal';
 import FocusGateModal from '../components/modals/FocusGateModal';
-import { evaluateGate, DEFAULT_GATE_CONFIG } from '../utils/focusGate';
+import { evaluateGate, hasAnySelection, DEFAULT_GATE_CONFIG } from '../utils/focusGate';
 import * as FocusGate from '../services/focusGateService';
 
 const TIME_OF_DAY_VALUES = Array.from({ length: 48 }, (_, i) => i * 30);
@@ -107,7 +107,7 @@ function Homepage(props){
     const [gateConfig, setGateConfig] = useState(DEFAULT_GATE_CONFIG);
     const [gateSupported, setGateSupported] = useState(false);
     const [gateAuthStatus, setGateAuthStatus] = useState(FocusGate.AUTH_STATUS.notDetermined);
-    const [gateHasSelection, setGateHasSelection] = useState(false);
+    const [gateSelectionMeta, setGateSelectionMeta] = useState(null);
     const [gateShieldActive, setGateShieldActive] = useState(false);
 
     useEffect(() => {
@@ -131,7 +131,7 @@ function Homepage(props){
         setGateSupported(supported);
         if (supported) {
             setGateAuthStatus(FocusGate.getAuthorizationStatus());
-            setGateHasSelection(FocusGate.hasSelection());
+            setGateSelectionMeta(FocusGate.getSelectionMetadata());
         }
         FocusGate.loadGateConfig().then(setGateConfig);
     }, []);
@@ -190,13 +190,11 @@ function Homepage(props){
         setGateAuthStatus(status);
     }, []);
 
+    // The picker sheet persists the selection natively under SELECTION_ID; the
+    // event carries only counts, never the selection token itself.
     const handleGateSelectionChange = useCallback((event) => {
-        const nextSelection = event?.nativeEvent?.familyActivitySelection;
-        if (!nextSelection) return;
-        if (FocusGate.persistSelection(nextSelection)) {
-            setGateHasSelection(true);
-            syncGate();
-        }
+        setGateSelectionMeta(event?.nativeEvent ?? null);
+        syncGate();
     }, [syncGate]);
 
     const handleGateConfigChange = useCallback(async (next) => {
@@ -1165,7 +1163,8 @@ function Homepage(props){
                         onRequestAuthorization={handleRequestGateAuth}
                         config={gateConfig}
                         onChangeConfig={handleGateConfigChange}
-                        hasSelection={gateHasSelection}
+                        hasSelection={hasAnySelection(gateSelectionMeta)}
+                        selectionMeta={gateSelectionMeta}
                         onSelectionChange={handleGateSelectionChange}
                         sideLists={lists}
                         mainLists={mainLists}

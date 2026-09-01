@@ -39,3 +39,20 @@ Forks where a real alternative existed, what was chosen, and what was left on th
 - **B — deferred, worth trying:** valuable *in addition* to A, as an "start a focus session now" override rather than as the only mode.
 
 **Revisit hook:** the enable switch in `app/components/modals/FocusGateModal.js`, plus `scheduleDailyRearm`/`cancelDailyRearm` in `app/services/focusGateService.js`.
+
+## 2026-09-01 — How the user picks which apps to block
+
+**The fork:** the first on-device use of the Focus Gate found the "Apps to Block" step cramped and unusable.
+
+| Option | Tradeoff |
+| --- | --- |
+| **A. Apple's native picker sheet** (`DeviceActivitySelectionSheetViewPersisted`) | Full screen, with Apple's own search and Cancel/Done. Selection is persisted natively, so the app never handles a selection token. Presentation is Apple's to control — no styling to match our glass UI. |
+| B. Enlarge the inline picker | Keeps the picker in our own visual language and inside the settings flow. **Impossible in v0.6.1:** the library's native view sets `isUserInteractionEnabled = false` on the inline hosting view, so the picker is inert at any size; it also nests a scroll view inside our modal's ScrollView. |
+| C. Give the inline picker its own full-screen modal | Solves the scroll conflict and the cramping, but not the inertness — same dead end as B, with more code. |
+
+**Chosen: A.** It is the only option that actually produces a usable picker without patching the package, and it inherits Apple's search — which matters most for exactly the users who need this feature.
+
+- **B — rejected:** non-interactive by construction in the installed version.
+- **C — rejected:** inherits B's blocker.
+
+**Revisit hook:** the `DeviceActivitySelectionSheet` export in `app/services/focusGateService.js`. If a future package version makes the inline view interactive, B becomes viable and would let the picker sit inline with the other steps.

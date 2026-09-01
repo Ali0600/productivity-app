@@ -96,29 +96,24 @@ export const requestAuthorization = async () => {
 // --- App selection ----------------------------------------------------------
 
 /**
- * Persist the user's app selection under our stable id so the native
- * extensions can read it from the shared app group.
+ * Counts of what the user currently has selected, read back from the native
+ * store. Returns null when unsupported or nothing has been picked yet, so
+ * callers can distinguish "no selection" from "zero apps in a selection".
+ *
+ * The picker sheet writes the selection natively under SELECTION_ID, so this
+ * is the only read path — there is no JS-side persist step.
  */
-export const persistSelection = (familyActivitySelection) => {
-  if (!isSupported() || !familyActivitySelection) return false;
+export const getSelectionMetadata = () => {
+  if (!isSupported()) return null;
   try {
-    nativeModule.setFamilyActivitySelectionId({
-      id: SELECTION_ID,
-      familyActivitySelection,
-    });
-    return true;
+    return (
+      nativeModule.activitySelectionMetadata({
+        activitySelectionId: SELECTION_ID,
+      }) ?? null
+    );
   } catch (err) {
-    console.warn('Focus Gate: failed to persist selection.', err);
-    return false;
-  }
-};
-
-export const hasSelection = () => {
-  if (!isSupported()) return false;
-  try {
-    return !!nativeModule.getFamilyActivitySelectionId({ id: SELECTION_ID });
-  } catch {
-    return false;
+    console.warn('Focus Gate: failed to read selection metadata.', err);
+    return null;
   }
 };
 
@@ -249,4 +244,12 @@ export const teardown = () => {
   applyBlock(false, 'focus-gate-disabled');
 };
 
-export const DeviceActivitySelectionView = nativeModule?.DeviceActivitySelectionView ?? null;
+/**
+ * Apple's own full-screen picker sheet. The inline DeviceActivitySelectionView
+ * is deliberately not used: the library's native view sets
+ * isUserInteractionEnabled = false on its hosting view, so an embedded picker
+ * cannot be tapped at any size. The "Persisted" variant reads and writes the
+ * selection under SELECTION_ID itself, so no token ever passes through JS.
+ */
+export const DeviceActivitySelectionSheet =
+  nativeModule?.DeviceActivitySelectionSheetViewPersisted ?? null;
