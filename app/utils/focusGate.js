@@ -109,3 +109,22 @@ export const gateProgress = (config, mainLists, now = Date.now()) => {
   const done = tasks.filter((task) => completedToday(task, todayKey)).length;
   return { total: tasks.length, done, remaining: tasks.length - done };
 };
+
+/**
+ * Does the user currently have anything selected to block?
+ *
+ * Takes the count metadata the native picker reports rather than a selection
+ * token — the token never reaches JS. Deselecting everything reads as false,
+ * so the enable switch cannot arm a gate that would shield nothing.
+ *
+ * @param {{applicationCount?: number, categoryCount?: number, webDomainCount?: number}|null} meta
+ * @returns {boolean}
+ */
+export const hasAnySelection = (meta) => {
+  if (!meta) return false;
+  const total =
+    (meta.applicationCount ?? 0) +
+    (meta.categoryCount ?? 0) +
+    (meta.webDomainCount ?? 0);
+  return total > 0;
+};

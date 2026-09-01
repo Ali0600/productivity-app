@@ -3,6 +3,7 @@ import {
   isGateSatisfied,
   isGateTargetMissing,
   gateProgress,
+  hasAnySelection,
   DEFAULT_GATE_CONFIG,
 } from '../focusGate';
 
@@ -167,5 +168,38 @@ describe('gateProgress', () => {
 
   test('missing target reports zeroes rather than throwing', () => {
     expect(gateProgress(CONFIG, [], NOW)).toEqual({ total: 0, done: 0, remaining: 0 });
+  });
+});
+
+describe('hasAnySelection', () => {
+  const meta = (applicationCount, categoryCount, webDomainCount) => ({
+    applicationCount,
+    categoryCount,
+    webDomainCount,
+    includeEntireCategory: false,
+  });
+
+  it('is false when nothing has ever been picked', () => {
+    expect(hasAnySelection(null)).toBe(false);
+    expect(hasAnySelection(undefined)).toBe(false);
+  });
+
+  it('is false when the user deselected everything', () => {
+    expect(hasAnySelection(meta(0, 0, 0))).toBe(false);
+  });
+
+  it('counts a lone app, category, or web domain', () => {
+    expect(hasAnySelection(meta(1, 0, 0))).toBe(true);
+    expect(hasAnySelection(meta(0, 1, 0))).toBe(true);
+    expect(hasAnySelection(meta(0, 0, 1))).toBe(true);
+  });
+
+  it('counts a mixed selection', () => {
+    expect(hasAnySelection(meta(3, 2, 1))).toBe(true);
+  });
+
+  it('treats missing count fields as zero rather than NaN', () => {
+    expect(hasAnySelection({})).toBe(false);
+    expect(hasAnySelection({ applicationCount: 2 })).toBe(true);
   });
 });

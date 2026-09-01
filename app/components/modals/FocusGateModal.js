@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { View, StyleSheet, Text, Modal, SafeAreaView, TouchableOpacity, ScrollView, Switch } from "react-native";
 import GlassCard from "../GlassCard";
 import IntervalSlider, { formatTimeOfDay } from "../IntervalSlider";
@@ -6,13 +7,31 @@ import { tapLight, selection } from '../../services/haptics';
 import { gateProgress, isGateTargetMissing } from '../../utils/focusGate';
 import {
     AUTH_STATUS,
-    DeviceActivitySelectionView,
+    DeviceActivitySelectionSheet,
+    SELECTION_ID,
     unsupportedReason,
 } from '../../services/focusGateService';
 
 // Re-arm hour picker reuses the notification time-of-day slider (30-min steps),
 // but the schedule only takes whole hours, so offer hour marks only.
 const HOUR_VALUES = Array.from({ length: 24 }, (_, i) => i * 60);
+
+// The sheet component is an invisible anchor — Apple presents the real picker
+// over it, so it needs a position in the tree but no size of its own.
+const SHEET_ANCHOR = { width: 1, height: 1, position: 'absolute' };
+
+/** "3 apps · 1 category" — what the user has chosen, without naming any app. */
+const describeSelection = (meta) => {
+    if (!meta) return 'None selected yet';
+    const parts = [];
+    const add = (count, singular, plural) => {
+        if (count > 0) parts.push(`${count} ${count === 1 ? singular : plural}`);
+    };
+    add(meta.applicationCount ?? 0, 'app', 'apps');
+    add(meta.categoryCount ?? 0, 'category', 'categories');
+    add(meta.webDomainCount ?? 0, 'site', 'sites');
+    return parts.length ? parts.join(' · ') : 'None selected yet';
+};
 
 /**
  * Focus Gate settings: authorize Screen Time, choose which apps to gate, pick
@@ -28,12 +47,14 @@ function FocusGateModal({
     config,
     onChangeConfig,
     hasSelection,
+    selectionMeta,
     onSelectionChange,
     sideLists,
     mainLists,
     currentMainList,
     shieldActive,
 }) {
+    const [pickerVisible, setPickerVisible] = useState(false);
     const authorized = authStatus === AUTH_STATUS.approved;
     const targetMissing = isGateTargetMissing(config, mainLists);
     const progress = gateProgress(config, mainLists);
@@ -98,13 +119,38 @@ function FocusGateModal({
                                             Apple keeps your picks private — ADHDone never sees which
                                             apps you chose.
                                         </Text>
-                                        {DeviceActivitySelectionView ? (
-                                            <View style={styles.pickerWrap}>
-                                                <DeviceActivitySelectionView
-                                                    style={styles.picker}
-                                                    onSelectionChange={onSelectionChange}
-                                                />
-                                            </View>
+                                        {DeviceActivitySelectionSheet ? (
+                                            <>
+                                                <TouchableOpacity
+                                                    style={styles.pickerRow}
+                                                    onPress={() => {
+                                                        tapLight();
+                                                        setPickerVisible(true);
+                                                    }}
+                                                >
+                                                    <Text style={styles.pickerText}>
+                                                        Choose apps to block
+                                                    </Text>
+                                                    <Text style={styles.pickerCount}>
+                                                        {describeSelection(selectionMeta)}
+                                                    </Text>
+                                                    <SymbolView
+                                                        name="chevron.right"
+                                                        size={16}
+                                                        tintColor="white"
+                                                    />
+                                                </TouchableOpacity>
+                                                {pickerVisible ? (
+                                                    <DeviceActivitySelectionSheet
+                                                        style={SHEET_ANCHOR}
+                                                        familyActivitySelectionId={SELECTION_ID}
+                                                        onSelectionChange={onSelectionChange}
+                                                        onDismissRequest={() =>
+                                                            setPickerVisible(false)
+                                                        }
+                                                    />
+                                                ) : null}
+                                            </>
                                         ) : null}
 
                                         {/* Step 3 — what unlocks them */}
@@ -296,15 +342,6 @@ const styles = StyleSheet.create({
         marginHorizontal: 16,
         marginTop: 12,
         lineHeight: 18,
-    },
-    pickerWrap: {
-        marginHorizontal: 16,
-        height: 260,
-        borderRadius: 10,
-        overflow: 'hidden',
-    },
-    picker: {
-        flex: 1,
     },
     pickerRow: {
         flexDirection: 'row',

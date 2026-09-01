@@ -57,3 +57,27 @@ EAS Build auto-syncs ordinary capabilities (push, App Groups, Apple Pay…) onto
 **Why it came up:** First 1.0.37 production build failed exactly this way on all four targets, even though Apple had already approved the entitlement for the account. The approval unlocks the checkbox; it doesn't tick it. One consolation: the failed build still *registered* the three extension App IDs, which is what made ticking them possible at all.
 
 **Takeaway:** For an approval-gated capability the real flow is: request → wait for approval → **manually tick the capability on every affected App ID** (main app + each extension — in the identifier's regular *Capabilities* tab, via its search icon if the list is long; despite some docs, there may be no separate "Additional Capabilities" tab) → rebuild so the invalidated provisioning profiles regenerate. Don't assume "EAS syncs capabilities" covers the gated ones — and if a rebuild reuses stale profiles, delete them via `eas credentials --platform ios` and build again.
+
+## A repeated manual config change fails silently on exactly one item
+
+When you tick the same box across N items in a web console, a save that doesn't take looks identical to one that did — the UI returns you to the list either way. The only honest verification is re-opening each item.
+
+**Why it came up:** Family Controls (Distribution) was ticked and saved on all four App IDs, but `.ActivityMonitorExtension` silently didn't persist. The next build got three of four targets signing and failed only on that one. Re-auditing all four in the portal found exactly one unticked box — a full build cycle (~30 min) spent to learn what a 60-second audit would have shown.
+
+**Takeaway:** After a repeated manual change across N items, re-read all N before triggering the expensive job that depends on them. "I did all of them" is a memory of intent, not a measurement of state.
+
+## Read a signing error as naming what the profile HAS, not what it needs
+
+Xcode's *"provisioning profile doesn't support the Family Controls (Development) capability"* reads like a demand for the Development variant. It isn't — it's naming the variant the profile actually carries. Development was the only box ticked, so it was the only entitlement in the profile, and an App Store build needs Distribution.
+
+**Why it came up:** The word "Development" in the error sent the first reading in the wrong direction, toward "why is it asking for a dev entitlement on a release build?" The paired second line — *"doesn't include the com.apple.developer.family-controls entitlement"* — is the one that says what's missing.
+
+**Takeaway:** When a capability has Development/Distribution variants, an error naming one variant is describing the current state, not the requirement. Check the box for the build type you're producing, and trust the "doesn't include" line over the "doesn't support" line.
+
+## A view can be inert by construction, not just too small
+
+A UI control that's hard to use looks like a sizing problem, so the reflex is to give it more room. But a native view can be built to refuse touches entirely, in which case no amount of space helps.
+
+**Why it came up:** The Focus Gate's app picker sat in a 260pt box and felt impossible to navigate. `react-native-device-activity`'s `ReactNativeDeviceActivityView.swift` sets `isUserInteractionEnabled = false` on the inline hosting view unconditionally — the embedded picker could never have received a tap. The library's supported path is a separate sheet component that has Apple present the picker as a real modal. Enlarging the box would have shipped a still-broken screen and looked like a fix.
+
+**Takeaway:** Before treating a cramped control as a layout bug, read the component's own source for whether it's meant to be embedded at all. A wrapper library often ships several variants (inline / sheet / persisted) where only some are interactive — the README's "which one should I use?" section is load-bearing, not marketing.
