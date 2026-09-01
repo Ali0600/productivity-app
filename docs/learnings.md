@@ -81,3 +81,11 @@ A UI control that's hard to use looks like a sizing problem, so the reflex is to
 **Why it came up:** The Focus Gate's app picker sat in a 260pt box and felt impossible to navigate. `react-native-device-activity`'s `ReactNativeDeviceActivityView.swift` sets `isUserInteractionEnabled = false` on the inline hosting view unconditionally — the embedded picker could never have received a tap. The library's supported path is a separate sheet component that has Apple present the picker as a real modal. Enlarging the box would have shipped a still-broken screen and looked like a fix.
 
 **Takeaway:** Before treating a cramped control as a layout bug, read the component's own source for whether it's meant to be embedded at all. A wrapper library often ships several variants (inline / sheet / persisted) where only some are interactive — the README's "which one should I use?" section is load-bearing, not marketing.
+
+## A package's declared `engines` can be narrower than its dependency tree's
+
+`eas-cli@23.2.0` declares `engines: { node: ">=20.0.0" }`, but pulls `@oclif/plugin-autocomplete@3.3.0`, which requires `>=22.0.0`. Under npm that's a warning; under yarn — which `expo/expo-github-action` uses — engine mismatches are hard errors, so the install fails outright.
+
+**Why it came up:** Every push to `main` since 2026-08-28 failed at "Setup EAS" on Node 20, so **no OTA update published for four days** while Lint and Test kept reporting green. The failure was visible as a red run on `main`, but nothing looked at `main` runs — PR checks were the only thing being read, and the OTA job doesn't run on PRs.
+
+**Takeaway:** Trust a package's transitive tree over its own `engines` field when picking a CI runtime, and treat a strict installer (yarn/pnpm) as the thing that decides. More generally: a job that only runs on the default branch is unverified by every PR that precedes it — after merging, confirm the run *concluded* success on the branch that actually publishes, because "the PR was green" and "the release shipped" are different claims.
