@@ -9,7 +9,15 @@ export default ({ config }) => {
       version: "1.0.37",
       orientation: "portrait",
       icon: "./app/assets/icon.png",
-      userInterfaceStyle: "light",
+      // Dark, not light: this is a dark-only app, and forcing light pins every
+      // iOS *system* colour to its light value. That is invisible while our own
+      // gradient covers the root view, but the OS also draws outside our view
+      // tree — a presented sheet exposes the root view's systemBackgroundColor
+      // (white under light) and the sheet host's systemGroupedBackground
+      // (#F2F2F7 under light), which showed as a white band beneath the Screen
+      // Time app picker. Dark also makes GlassView's 'auto' colorScheme resolve
+      // correctly, so a missing colorScheme="dark" no longer flashes white.
+      userInterfaceStyle: "dark",
       splash: {
         image: "./app/assets/splash.png",
         resizeMode: "contain",

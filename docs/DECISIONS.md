@@ -4,6 +4,7 @@ Forks where a real alternative existed, what was chosen, and what was left on th
 
 ## Backlog — alternatives worth trying later
 
+- **`expo-system-ui` for an explicit root-view background** (from "Killing the white band under the app-picker sheet") — pins the root view regardless of what the system default resolves to. Revisit at `userInterfaceStyle` in `app.config.js`.
 - **Manual-only Focus Gate arming** (from "How the Focus Gate re-arms") — an override for ad-hoc focus sessions, alongside the automatic daily re-arm. Revisit at the enable switch in `app/components/modals/FocusGateModal.js`.
 
 ---
@@ -56,3 +57,20 @@ Forks where a real alternative existed, what was chosen, and what was left on th
 - **C — rejected:** inherits B's blocker.
 
 **Revisit hook:** the `DeviceActivitySelectionSheet` export in `app/services/focusGateService.js`. If a future package version makes the inline view interactive, B becomes viable and would let the picker sit inline with the other steps.
+
+## 2026-09-01 — Killing the white band under the app-picker sheet
+
+**The fork:** how to stop iOS light-mode system colours showing as a white band beneath Apple's presented Screen Time picker.
+
+| Option | Tradeoff |
+| --- | --- |
+| **A. `userInterfaceStyle: "dark"`** | One line, no new dependency. Turns *both* white layers dark at once — the RN root view's `systemBackgroundColor` and the picker host's `systemGroupedBackground` — and makes `GlassView`'s `'auto'` resolve correctly, retiring a standing footgun. Changes system-drawn surfaces app-wide (Alerts, keyboard), which can only be checked on a device after a build. |
+| B. `expo-system-ui` + `backgroundColor` | Keeps light mode and paints only the root view. Narrower blast radius, but adds a native dependency, does not touch the picker's own `#F2F2F7` container, and leaves the `colorScheme="dark"` hazard in place. |
+| C. Both | Belt and braces: dark mode *and* an explicitly pinned root view. Strictly more than A needs, for one extra native dep. |
+
+**Chosen: A.** The app is dark-only; forcing light was the root cause rather than something to work around, and A is also the only option that fixes the picker's own container.
+
+- **B — deferred, worth trying:** valuable if a future surface needs the root view pinned to an exact colour rather than inheriting the system default.
+- **C — rejected:** B's addition buys nothing once A resolves the system default correctly.
+
+**Revisit hook:** `userInterfaceStyle` in `app.config.js`; the `GlassCard` rule in CLAUDE.md's UI Conventions depends on whatever it is set to.
