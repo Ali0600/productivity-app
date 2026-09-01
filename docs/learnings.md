@@ -89,3 +89,11 @@ A UI control that's hard to use looks like a sizing problem, so the reflex is to
 **Why it came up:** Every push to `main` since 2026-08-28 failed at "Setup EAS" on Node 20, so **no OTA update published for four days** while Lint and Test kept reporting green. The failure was visible as a red run on `main`, but nothing looked at `main` runs — PR checks were the only thing being read, and the OTA job doesn't run on PRs.
 
 **Takeaway:** Trust a package's transitive tree over its own `engines` field when picking a CI runtime, and treat a strict installer (yarn/pnpm) as the thing that decides. More generally: a job that only runs on the default branch is unverified by every PR that precedes it — after merging, confirm the run *concluded* success on the branch that actually publishes, because "the PR was green" and "the release shipped" are different claims.
+
+## Forcing a UI style makes you inherit every system colour you never named
+
+Setting `userInterfaceStyle: "light"` (iOS `UIUserInterfaceStyle`) doesn't only affect components you style — it pins *every* semantic system colour to its light value: `systemBackgroundColor`, `systemGroupedBackground`, and whatever the OS paints on your behalf. A dark-themed app that forces light inherits white for all of them.
+
+**Why it came up:** ADHDone forced light while painting a dark gradient over everything, so the mismatch was invisible for months. It only surfaced when Apple's Screen Time picker was presented as a sheet: React Native 0.81 assigns `rootView.backgroundColor = systemBackgroundColor` unconditionally (there is no `RCTRootViewBackgroundColor` Info.plist override any more), and the picker's host view uses `systemGroupedBackground` — white and `#F2F2F7` respectively under forced light. Both sit *outside* our view tree, so our gradient could never cover them.
+
+**Takeaway:** your styles only reach the views you render; a forced UI style governs everything else the OS draws — sheets, alerts, keyboards, the root view behind a transform. Set the style to match your design rather than overriding its symptoms one surface at a time, and be suspicious of any "just this one element is the wrong colour" bug that appears only when the OS presents something.
