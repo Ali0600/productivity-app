@@ -34,7 +34,7 @@ jobs:
       # Node 22 is required by eas-cli's dependency tree, not by this app —
       # see the matching note in ci.yml.
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 22.x
           cache: npm
