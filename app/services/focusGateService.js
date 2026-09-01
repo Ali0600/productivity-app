@@ -79,6 +79,28 @@ export const getAuthorizationStatus = () => {
 };
 
 /**
+ * Read the authorization status, waiting for it to settle.
+ *
+ * `AuthorizationCenter.shared.authorizationStatus` reports `notDetermined` for
+ * a short while after launch even when the user approved in an earlier session
+ * — so the first synchronous read on a cold start is not trustworthy. The
+ * package ships a poll for exactly this (10 attempts, 250ms apart, returning as
+ * soon as the status is anything other than `notDetermined`).
+ *
+ * Pass an AbortController to stop early; the poll resolves with whatever the
+ * current status is when aborted.
+ */
+export const pollAuthorizationStatus = async (abortController) => {
+  if (!isSupported()) return AUTH_STATUS.notDetermined;
+  try {
+    return await nativeModule.pollAuthorizationStatus({ abortController });
+  } catch (err) {
+    console.warn('Focus Gate: pollAuthorizationStatus() failed.', err);
+    return getAuthorizationStatus();
+  }
+};
+
+/**
  * Prompt for Screen Time authorization. Resolves to the resulting status —
  * requestAuthorization() itself resolves void, so the status is read after.
  */

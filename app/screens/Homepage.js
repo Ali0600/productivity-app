@@ -129,11 +129,21 @@ function Homepage(props){
     useEffect(() => {
         const supported = FocusGate.isSupported();
         setGateSupported(supported);
-        if (supported) {
-            setGateAuthStatus(FocusGate.getAuthorizationStatus());
-            setGateSelectionMeta(FocusGate.getSelectionMetadata());
-        }
         FocusGate.loadGateConfig().then(setGateConfig);
+        if (!supported) return undefined;
+
+        setGateSelectionMeta(FocusGate.getSelectionMetadata());
+
+        // Screen Time reports notDetermined for a moment after launch even when
+        // the user already approved, so a plain read here would leave the gate
+        // asking for access it already has for the whole session — the AppState
+        // listener below cannot correct it, since 'change' never fires for the
+        // active state the app launches into. Poll until it settles.
+        const abortController = new AbortController();
+        FocusGate.pollAuthorizationStatus(abortController).then((status) => {
+            if (!abortController.signal.aborted) setGateAuthStatus(status);
+        });
+        return () => abortController.abort();
     }, []);
 
     // Use our custom hooks
@@ -180,6 +190,13 @@ function Homepage(props){
 
     const handleOpenFocusGate = useCallback(() => {
         tapLight();
+        // The modal is a controlled component that never re-checks anything, so
+        // refresh here rather than let it render a snapshot taken at launch. By
+        // now Screen Time has long settled, so the synchronous reads are sound.
+        if (FocusGate.isSupported()) {
+            setGateAuthStatus(FocusGate.getAuthorizationStatus());
+            setGateSelectionMeta(FocusGate.getSelectionMetadata());
+        }
         setFocusGateVisible(true);
         setSettingsVisible(false);
     }, []);
