@@ -29,7 +29,7 @@ jobs:
           fi
 
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Node 22 is required by eas-cli's dependency tree, not by this app —
       # see the matching note in ci.yml.
