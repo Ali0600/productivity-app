@@ -10,16 +10,23 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: state what this workflow may touch instead of inheriting whatever the
+# repository default happens to be, which is a setting that can change underneath it.
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 20.x
           cache: npm
@@ -35,10 +42,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 20.x
           cache: npm
@@ -72,7 +81,9 @@ jobs:
 
       - name: Checkout repository
         if: steps.expo_token.outputs.has_token == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       # Node 22, not 20 like the other jobs: eas-cli declares engines
       # ">=20.0.0" but pulls @oclif/plugin-autocomplete, which requires
@@ -80,14 +91,14 @@ jobs:
       # strictly, so Node 20 fails the install outright.
       - name: Setup Node
         if: steps.expo_token.outputs.has_token == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22.x
           cache: npm
 
       - name: Setup EAS
         if: steps.expo_token.outputs.has_token == 'true'
-        uses: expo/expo-github-action@v9
+        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # 9.0.0
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
