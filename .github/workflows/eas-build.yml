@@ -15,6 +15,11 @@ on:
         options: [development, preview, production]
         default: production
 
+# Least privilege: state what this workflow may touch instead of inheriting whatever the
+# repository default happens to be, which is a setting that can change underneath it.
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build (${{ inputs.platform }} / ${{ inputs.profile }})
@@ -29,18 +34,20 @@ jobs:
           fi
 
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       # Node 22 is required by eas-cli's dependency tree, not by this app —
       # see the matching note in ci.yml.
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22.x
           cache: npm
 
       - name: Setup Expo and EAS
-        uses: expo/expo-github-action@v9
+        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # 9.0.0
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
