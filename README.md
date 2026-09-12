@@ -11,23 +11,23 @@ and shipped to TestFlight via EAS.
 
 ## Highlights
 
-- **Designed and shipped a notification engine** with per-message reminder intervals, "pause" rules
-  (mute reminders once a task / list / main-list is completed for the day), quiet hours, and
-  even staggering of same-interval messages — all within iOS's 64-scheduled-notification limit.
-- **Built a CI/CD pipeline with GitHub Actions** that lints and unit-tests every push/PR and
-  publishes over-the-air (OTA) updates via EAS Update on merges to `main` — gated on both checks
-  passing — plus a manual-dispatch EAS Build workflow for App Store binaries.
+- **Designed and shipped a notification engine** with a reminder interval per message, "pause"
+  rules (mute reminders once a task, list, or main list is done for the day), quiet hours, and
+  even spacing of messages that share an interval — all inside iOS's 64-scheduled-notification limit.
+- **Built a CI/CD pipeline with GitHub Actions** that lints and unit-tests every push and PR, and
+  publishes over-the-air (OTA) updates via EAS Update when a merge lands on `main` — only after
+  both checks pass — plus a manual-dispatch EAS Build workflow for App Store binaries.
 - **Implemented an OTA update flow** with `expo-updates`, including an in-app "update ready" prompt
-  and version-pinned runtime so JS-only changes ship in seconds without an App Store review.
-- **Engineered a local-first data layer** over AsyncStorage with debounced auto-persistence and a
-  3-level data model (main lists → side lists → tasks) driving a staleness-aware bento home screen.
-- **Crafted a Liquid Glass UI** (`expo-glass-effect`) on a dark gradient with haptics, swipe-to-
+  and a version-pinned runtime, so JS-only changes ship in seconds without an App Store review.
+- **Built a local-first data layer** over AsyncStorage with debounced auto-save and a
+  3-level data model (main lists → side lists → tasks) that drives a home screen sorted by how stale each item is.
+- **Made a Liquid Glass UI** (`expo-glass-effect`) on a dark gradient, with haptics, swipe-to-
   complete/delete gestures, and drag-to-reorder lists.
 - **Integrated Apple's Screen Time APIs** (FamilyControls / ManagedSettings / DeviceActivity) to
-  build a "Focus Gate" that blocks chosen apps until a task list is completed for the day, with a
-  native background schedule that re-arms the block each morning without the app being launched.
-- **Automated dependency hygiene** with Dependabot (grouped Expo/React Native updates) and
-  enforced code quality with ESLint (flat config) + Prettier, plus a Jest suite gating OTA releases
+  build a "Focus Gate" that blocks chosen apps until a task list is done for the day. A native
+  background schedule re-arms the block each morning without the app being opened.
+- **Automated dependency upkeep** with Dependabot (grouped Expo/React Native updates), and
+  enforced code quality with ESLint (flat config) + Prettier, plus a Jest suite that gates OTA releases
   in CI.
 
 ## Tech Stack
@@ -50,7 +50,7 @@ npm install
 npx expo start          # dev server (add --tunnel from WSL)
 ```
 
-You'll need a development build installed on a device/simulator to load the dev server:
+To load the dev server, you need a development build installed on a device or simulator:
 
 ```bash
 eas build --profile development --platform ios
@@ -69,26 +69,26 @@ eas submit --platform ios
 eas update
 ```
 
-`runtimeVersion` is pinned to `appVersion`, so a **native** change (new native module, SDK bump,
-Info.plist/entitlement edit) requires a new build **and** a version bump in `app.config.js`,
+`runtimeVersion` is pinned to `appVersion`. So a **native** change (a new native module, an SDK
+bump, an Info.plist or entitlement edit) needs a new build **and** a version bump in `app.config.js`,
 `package.json`, and `package-lock.json`. JS-only changes ship via `eas update`.
 
 ## CI/CD
 
-Two workflows under [`.github/workflows`](.github/workflows):
+Two workflows live under [`.github/workflows`](.github/workflows):
 
-- **`ci.yml`** — runs ESLint and the Jest suite on every push and pull request; on pushes to
-  `main`, publishes an OTA update with `eas update --auto`, gated on **both** jobs passing
-  (`needs: [lint, test]`). The EAS step is skipped (not failed) until an `EXPO_TOKEN` repo secret
-  is configured.
-- **`eas-build.yml`** — manual (`workflow_dispatch`) EAS Build with platform/profile inputs.
+- **`ci.yml`** — runs ESLint and the Jest suite on every push and pull request. On a push to
+  `main`, it publishes an OTA update with `eas update --auto`, but only after **both** jobs pass
+  (`needs: [lint, test]`). The EAS step is skipped (not failed) until you add an `EXPO_TOKEN` repo
+  secret.
+- **`eas-build.yml`** — a manual (`workflow_dispatch`) EAS Build with platform and profile inputs.
 
-**To enable EAS steps:** add an `EXPO_TOKEN` secret
+**To enable the EAS steps:** add an `EXPO_TOKEN` secret
 (Settings → Secrets and variables → Actions). Generate one at
 <https://expo.dev/accounts/[account]/settings/access-tokens>.
 
-[Dependabot](.github/dependabot.yml) opens weekly dependency PRs (npm + GitHub Actions), with
-Expo/React Native packages grouped so partial SDK bumps don't create unmergeable PRs.
+[Dependabot](.github/dependabot.yml) opens weekly dependency PRs (npm + GitHub Actions). Expo and
+React Native packages are grouped, so a partial SDK bump cannot create an unmergeable PR.
 
 ## Scripts
 
@@ -121,23 +121,23 @@ See [CLAUDE.md](CLAUDE.md) for the full architecture, data model, and UI convent
 
 ## Experience Gained
 
-Skills and practices this project demonstrates:
+Skills and practices this project shows:
 
-- **Mobile CI/CD** — GitHub Actions pipeline that lints and unit-tests every push/PR and gates an
-  over-the-air release on both passing, with EAS Build/Update/Submit for binary distribution.
-- **Release engineering on a constrained platform** — runtime-version pinning so OTA bundles only
-  reach compatible binaries, plus handling of TestFlight's 90-day build expiry and Apple's
+- **Mobile CI/CD** — a GitHub Actions pipeline that lints and unit-tests every push and PR, and
+  lets an over-the-air release through only when both pass, with EAS Build/Update/Submit for shipping binaries.
+- **Release engineering on a locked-down platform** — runtime-version pinning so OTA bundles only
+  reach builds that can run them, plus treating TestFlight's 90-day build expiry and Apple's
   approval-gated entitlements as scheduling constraints rather than surprises.
 - **Native platform integration** — Apple Screen Time (FamilyControls, ManagedSettings,
-  DeviceActivity) via an Expo config plugin with app-group-shared extensions, defensively loaded so
-  a build lacking the native module degrades instead of crashing.
-- **Test design** — pure decision logic extracted from UI and native side effects, then proven by
-  deliberately breaking each guard and confirming the suite catches it.
+  DeviceActivity) through an Expo config plugin with app-group-shared extensions, loaded defensively so
+  a build without the native module degrades instead of crashing.
+- **Test design** — pure decision logic pulled out of the UI and native side effects, then proven by
+  breaking each guard on purpose and confirming the suite catches it.
 - **Fail-safe defaults** — enforcement paths that fail open, so a deleted or renamed dependency can
-  never strand a user behind a block they cannot clear.
-- **Local-first data engineering** — AsyncStorage-backed model with debounced persistence, schema
-  normalization on load, validated backup import/export, and an append-only completion history
-  driving streaks and analytics.
+  never leave a user stuck behind a block they cannot clear.
+- **Local-first data engineering** — an AsyncStorage-backed model with debounced saving, schema
+  normalization on load, checked backup import/export, and an append-only completion history
+  that drives streaks and analytics.
 
 ## License
 
