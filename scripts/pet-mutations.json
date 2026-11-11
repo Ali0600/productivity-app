@@ -213,7 +213,7 @@
     "test": "app/utils/__tests__/pet.test.js",
     "find": "  const stale = Object.keys(next.days).filter((k) => keyToDayStart(k) < cutoff);",
     "replace": "  const stale = [];",
-    "expectCaughtBy": ["old per-day counts are pruned"]
+    "expectCaughtBy": ["70 days before the last snack"]
   },
   {
     "name": "normalize keeps unknown tricks",
