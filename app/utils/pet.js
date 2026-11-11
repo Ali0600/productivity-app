@@ -202,6 +202,22 @@ const msOrNull = (n) => (isFiniteNumber(n) && n > 0 ? n : null);
  */
 const clampToClock = (ms, now) => (ms > now + FUTURE_GRACE_MS ? now - FUTURE_GRACE_MS : ms);
 
+/**
+ * Pull every stored instant that is ahead of the clock back to it: the
+ * watermark (or feeding freezes), the adoption time (or cozy weeks and "is it
+ * helping?" wait for that date) and the hatch time (or the diary stays blank).
+ * Returns the same object when nothing was ahead.
+ */
+const reconcileClock = (pet, now) => {
+  const watermark = clampToClock(pet.watermark, now);
+  const adoptedAt = clampToClock(pet.adoptedAt, now);
+  const hatchedAt = pet.hatchedAt == null ? null : clampToClock(pet.hatchedAt, now);
+  if (watermark === pet.watermark && adoptedAt === pet.adoptedAt && hatchedAt === pet.hatchedAt) {
+    return pet;
+  }
+  return { ...pet, watermark, adoptedAt, hatchedAt };
+};
+
 const cleanBaseline = (raw) => {
   if (!raw || typeof raw !== 'object') return null;
   const { days, completions, activeDays } = raw;
@@ -247,35 +263,38 @@ export const normalizePet = (raw, now) => {
     : [];
 
   const progress = count(raw.trickProgress);
-  return {
-    ...base,
-    name: cleanName(raw.name) ?? DEFAULT_PET_NAME,
-    color: PET_COLOR_KEYS.includes(raw.color) ? raw.color : DEFAULT_PET_COLOR,
-    adoptedAt,
-    hatchedAt: msOrNull(raw.hatchedAt),
-    // A watermark ahead of the clock (a fast-clock backup, a clock set back)
-    // would freeze feeding until that time, so pull it back to now.
-    watermark: clampToClock(msOrNull(raw.watermark) ?? adoptedAt, now),
-    lastSnackAt: msOrNull(raw.lastSnackAt),
-    snacks: count(raw.snacks),
-    careDays: count(raw.careDays),
-    days,
-    trickProgress:
-      raw.trickProgress == null ? TRICK_HEAD_START : Math.min(progress, TRICK_SLOTS - 1),
-    tricks,
-    treasures,
-    lastGiftDay:
-      typeof raw.lastGiftDay === 'string' && DAY_KEY_RE.test(raw.lastGiftDay)
-        ? raw.lastGiftDay
-        : null,
-    cozyWeeks: count(raw.cozyWeeks),
-    cozyCheckedThrough: msOrNull(raw.cozyCheckedThrough),
-    wokeFor: msOrNull(raw.wokeFor),
-    wokeOn: typeof raw.wokeOn === 'string' && DAY_KEY_RE.test(raw.wokeOn) ? raw.wokeOn : null,
-    baseline: cleanBaseline(raw.baseline),
-    calm: raw.calm === true,
-    hidden: raw.hidden === true,
-  };
+  // A record saved while the clock was ahead (or a backup from a phone with a
+  // fast clock) comes back with its instants pulled back to now.
+  return reconcileClock(
+    {
+      ...base,
+      name: cleanName(raw.name) ?? DEFAULT_PET_NAME,
+      color: PET_COLOR_KEYS.includes(raw.color) ? raw.color : DEFAULT_PET_COLOR,
+      adoptedAt,
+      hatchedAt: msOrNull(raw.hatchedAt),
+      watermark: msOrNull(raw.watermark) ?? adoptedAt,
+      lastSnackAt: msOrNull(raw.lastSnackAt),
+      snacks: count(raw.snacks),
+      careDays: count(raw.careDays),
+      days,
+      trickProgress:
+        raw.trickProgress == null ? TRICK_HEAD_START : Math.min(progress, TRICK_SLOTS - 1),
+      tricks,
+      treasures,
+      lastGiftDay:
+        typeof raw.lastGiftDay === 'string' && DAY_KEY_RE.test(raw.lastGiftDay)
+          ? raw.lastGiftDay
+          : null,
+      cozyWeeks: count(raw.cozyWeeks),
+      cozyCheckedThrough: msOrNull(raw.cozyCheckedThrough),
+      wokeFor: msOrNull(raw.wokeFor),
+      wokeOn: typeof raw.wokeOn === 'string' && DAY_KEY_RE.test(raw.wokeOn) ? raw.wokeOn : null,
+      baseline: cleanBaseline(raw.baseline),
+      calm: raw.calm === true,
+      hidden: raw.hidden === true,
+    },
+    now
+  );
 };
 
 // --- Derived views -------------------------------------------------------------
@@ -631,10 +650,8 @@ const rollover = (pet, now, events) => {
 export const advancePet = (pet, mainLists, now) => {
   const events = [];
   let current = takeBaseline(pet, mainLists);
-  // A watermark ahead of the clock (the clock was set back) would freeze
-  // feeding until that time; bring it back on every pass, not only at load.
-  const watermark = clampToClock(current.watermark, now);
-  if (watermark !== current.watermark) current = { ...current, watermark };
+  // The clock may have been set back since the last pass; not only at load.
+  current = reconcileClock(current, now);
   const fresh = collectCompletions(mainLists, current.watermark, now);
   // A task finished before anyone saw the nap (straight into a list, say) still
   // wakes the pet first, so a long break keeps its welcome-back gift.

@@ -40,14 +40,6 @@
     "expectCaughtBy": ["before adoption never count"]
   },
   {
-    "name": "restored watermark not clamped",
-    "file": "app/utils/pet.js",
-    "test": "app/utils/__tests__/pet.test.js",
-    "find": "    watermark: clampToClock(msOrNull(raw.watermark) ?? adoptedAt, now),",
-    "replace": "    watermark: msOrNull(raw.watermark) ?? adoptedAt,",
-    "expectCaughtBy": ["pulled back"]
-  },
-  {
     "name": "every snack is a care day",
     "file": "app/utils/pet.js",
     "test": "app/utils/__tests__/pet.test.js",
@@ -392,14 +384,6 @@
     "expectCaughtBy": ["calm mode never plays the nap-and-yawn"]
   },
   {
-    "name": "watermark clamped only at load",
-    "file": "app/utils/pet.js",
-    "test": "app/utils/__tests__/pet.test.js",
-    "find": "  const watermark = clampToClock(current.watermark, now);",
-    "replace": "  const watermark = current.watermark;",
-    "expectCaughtBy": ["a clock set back mid-session"]
-  },
-  {
     "name": "clamp to now swallows the next task",
     "file": "app/utils/pet.js",
     "test": "app/utils/__tests__/pet.test.js",
@@ -430,5 +414,37 @@
     "find": "  const pruneFrom = Math.min(now, next.lastSnackAt ?? now);",
     "replace": "  const pruneFrom = now;",
     "expectCaughtBy": ["date set far ahead", "70 days before the last snack"]
+  },
+  {
+    "name": "watermark ahead of the clock kept",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  const watermark = clampToClock(pet.watermark, now);",
+    "replace": "  const watermark = pet.watermark;",
+    "expectCaughtBy": ["pulled back", "a clock set back mid-session"]
+  },
+  {
+    "name": "clock reconciled only at load",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  current = reconcileClock(current, now);",
+    "replace": "",
+    "expectCaughtBy": ["a clock set back mid-session"]
+  },
+  {
+    "name": "adoption time ahead of the clock kept",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  const adoptedAt = clampToClock(pet.adoptedAt, now);",
+    "replace": "  const adoptedAt = pet.adoptedAt;",
+    "expectCaughtBy": ["a year ahead catches up"]
+  },
+  {
+    "name": "hatch time ahead of the clock kept",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  const hatchedAt = pet.hatchedAt == null ? null : clampToClock(pet.hatchedAt, now);",
+    "replace": "  const hatchedAt = pet.hatchedAt;",
+    "expectCaughtBy": ["hatch stamped while the clock ran ahead"]
   }
 ]

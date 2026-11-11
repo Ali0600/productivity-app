@@ -705,6 +705,25 @@ describe('clock and time-zone changes', () => {
     expect(advancePet(back, everyDay(14), at(14, 9)).pet.cozyWeeks).toBe(2);
   });
 
+  test('an egg made while the clock read a year ahead catches up once the clock is right', () => {
+    const egg = createPet(at(400));
+    const settled = advancePet(egg, everyDay(0), at(0, 9)).pet;
+    const pet = advancePet(settled, everyDay(21), at(21, 9)).pet;
+    expect(pet.snacks).toBe(21);
+    expect(pet.cozyWeeks).toBe(3);
+    expect(helpingStats(pet, at(21, 9)).ready).toBe(true);
+  });
+
+  test('a hatch stamped while the clock ran ahead still lets cozy weeks count', () => {
+    const fast = advancePet(createPet(T0), tree([{ id: 'a', ats: [at(30)] }]), at(30, 11)).pet;
+    const lists = tree([
+      { id: 'a', ats: [at(30)] },
+      { id: 'b', ats: Array.from({ length: 12 }, (_, i) => at(2 + i)) },
+    ]);
+    const settled = advancePet(fast, lists, at(2, 9)).pet;
+    expect(advancePet(settled, lists, at(14, 9)).pet.cozyWeeks).toBe(2);
+  });
+
   test('a clock set back mid-session never freezes feeding, nor swallows the next task', () => {
     const fast = advancePet(createPet(T0), tree([{ id: 'a', ats: [at(2, 10)] }]), at(2, 11)).pet;
     const lists = tree([
