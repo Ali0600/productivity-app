@@ -445,11 +445,14 @@ describe('weekly diary and cozy weeks', () => {
     expect(r2.pet.cozyWeeks).toBe(1);
   });
 
-  test('old per-day counts are pruned, but totals and growth stay', () => {
-    const { pet } = advancePet(createPet(T0), tree([dailyTask(10)]), at(200, 9));
-    expect(Object.keys(pet.days)).toEqual([]);
-    expect(pet.careDays).toBe(10);
-    expect(pet.snacks).toBe(10);
+  test('per-day counts older than 70 days before the last snack are pruned; totals stay', () => {
+    const { pet } = advancePet(createPet(T0), tree([dailyTask(100)]), at(200, 9));
+    const keys = Object.keys(pet.days);
+    expect(keys).toHaveLength(71); // days 29..99: the 70 days before the last snack, and its day
+    expect(keys).toContain(dayKey(at(99)));
+    expect(keys).not.toContain(dayKey(at(28)));
+    expect(pet.careDays).toBe(100);
+    expect(pet.snacks).toBe(100);
   });
 });
 
@@ -530,7 +533,7 @@ describe('normalizePet', () => {
 
   test('a watermark ahead of the clock is pulled back, so feeding cannot freeze', () => {
     const pet = normalizePet({ ...createPet(T0), watermark: T0 + 30 * 86400000 }, T0);
-    expect(pet.watermark).toBe(T0 + 10 * 60000);
+    expect(pet.watermark).toBe(T0 - 10 * 60000);
   });
 
   test('a bad baseline is dropped, so it is simply retaken', () => {
@@ -669,6 +672,47 @@ describe('thresholds the docs promise', () => {
     const far = advancePet(createPet(T0), tree([{ id: 'a', ats: [now + 20 * 60000] }]), now);
     expect(near.pet.snacks).toBe(1);
     expect(far.pet.snacks).toBe(0);
+  });
+});
+
+describe('clock and time-zone changes', () => {
+  const everyDay = (days) =>
+    tree([{ id: 'a', ats: Array.from({ length: days }, (_, i) => at(i)) }]);
+
+  test('a time-zone move never judges the current week early', () => {
+    const lists = everyDay(21); // Monday 2 Nov to Sunday 22 Nov
+    const wednesday = advancePet(createPet(T0), lists, at(9, 9)).pet;
+    expect(wednesday.cozyWeeks).toBe(1);
+    // The same pointer as an instant written five hours ahead (London): Sunday 19:00 here.
+    const moved = { ...wednesday, cozyCheckedThrough: wednesday.cozyCheckedThrough - 5 * 3600000 };
+    const sameDay = advancePet(moved, lists, at(9, 10)).pet;
+    expect(sameDay.cozyWeeks).toBe(1);
+    expect(advancePet(sameDay, lists, at(21, 9)).pet.cozyWeeks).toBe(3);
+  });
+
+  test('one launch with the date set far ahead neither wipes today nor stops cozy weeks', () => {
+    const tenDays = tree([
+      {
+        id: 'a',
+        ats: [...Array.from({ length: 9 }, (_, i) => at(i)), at(9, 8), at(9, 9), at(9, 10)],
+      },
+    ]);
+    const real = advancePet(createPet(T0), tenDays, at(9, 12)).pet;
+    const future = advancePet(real, tenDays, at(400, 12)).pet;
+    const back = advancePet(future, tenDays, at(9, 13)).pet;
+    expect(snacksOn(back, at(9, 13))).toBe(3);
+    expect(moodFor(back, at(9, 13))).toBe('full');
+    expect(advancePet(back, everyDay(14), at(14, 9)).pet.cozyWeeks).toBe(2);
+  });
+
+  test('a clock set back mid-session never freezes feeding, nor swallows the next task', () => {
+    const fast = advancePet(createPet(T0), tree([{ id: 'a', ats: [at(2, 10)] }]), at(2, 11)).pet;
+    const lists = tree([
+      { id: 'a', ats: [at(2, 10)] },
+      { id: 'b', ats: [at(0, 12)] },
+    ]);
+    const back = advancePet(fast, lists, at(0, 12) + 1000).pet;
+    expect(back.snacks).toBe(2);
   });
 });
 

@@ -43,7 +43,7 @@
     "name": "restored watermark not clamped",
     "file": "app/utils/pet.js",
     "test": "app/utils/__tests__/pet.test.js",
-    "find": "    watermark: Math.min(msOrNull(raw.watermark) ?? adoptedAt, now + FUTURE_GRACE_MS),",
+    "find": "    watermark: clampToClock(msOrNull(raw.watermark) ?? adoptedAt, now),",
     "replace": "    watermark: msOrNull(raw.watermark) ?? adoptedAt,",
     "expectCaughtBy": ["pulled back"]
   },
@@ -390,5 +390,45 @@
     "find": "  if (find(events, 'wake') && !pet?.calm) {",
     "replace": "  if (find(events, 'wake')) {",
     "expectCaughtBy": ["calm mode never plays the nap-and-yawn"]
+  },
+  {
+    "name": "watermark clamped only at load",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  const watermark = clampToClock(current.watermark, now);",
+    "replace": "  const watermark = current.watermark;",
+    "expectCaughtBy": ["a clock set back mid-session"]
+  },
+  {
+    "name": "clamp to now swallows the next task",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "const clampToClock = (ms, now) => (ms > now + FUTURE_GRACE_MS ? now - FUTURE_GRACE_MS : ms);",
+    "replace": "const clampToClock = (ms, now) => (ms > now + FUTURE_GRACE_MS ? now : ms);",
+    "expectCaughtBy": ["nor swallows the next task"]
+  },
+  {
+    "name": "cozy pointer not snapped to a local Monday",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "    pet.cozyCheckedThrough != null ? weekStart(addDays(pet.cozyCheckedThrough, 3)) : null;",
+    "replace": "    pet.cozyCheckedThrough != null ? pet.cozyCheckedThrough : null;",
+    "expectCaughtBy": ["a time-zone move"]
+  },
+  {
+    "name": "cozy pointer ahead of the clock kept",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  if (checked != null && dayDiff(checked, thisMonday) <= 0) checked = addDays(thisMonday, -7);",
+    "replace": "",
+    "expectCaughtBy": ["date set far ahead"]
+  },
+  {
+    "name": "prune from the clock only",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  const pruneFrom = Math.min(now, next.lastSnackAt ?? now);",
+    "replace": "  const pruneFrom = now;",
+    "expectCaughtBy": ["date set far ahead", "70 days before the last snack"]
   }
 ]

@@ -148,8 +148,9 @@ Skills and practices this project shows:
   DeviceActivity) through an Expo config plugin with app-group-shared extensions, loaded defensively so
   a build without the native module degrades instead of crashing.
 - **Test design** — pure decision logic pulled out of the UI and native side effects, then proven by
-  breaking each guard on purpose: 25 deliberate sabotages of the pet's rules, every one caught,
-  with the suite pinned to a daylight-saving timezone so CI's UTC cannot hide day-boundary bugs.
+  breaking each guard on purpose: a mutation harness (`npm run test:mutations`) plants 49 bugs in
+  the pet's rules and every one is caught by its named test, with the suite pinned to a
+  daylight-saving time zone so CI's UTC cannot hide day-boundary bugs.
 - **Fail-safe defaults** — enforcement paths that fail open, so a deleted or renamed dependency can
   never leave a user stuck behind a block they cannot clear.
 - **Local-first data engineering** — an AsyncStorage-backed model with debounced saving, schema

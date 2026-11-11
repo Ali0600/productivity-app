@@ -115,7 +115,7 @@ function Homepage(props){
     const [gateShieldActive, setGateShieldActive] = useState(false);
     const [petModalVisible, setPetModalVisible] = useState(false);
     // The record only: the pet's per-minute view would re-render this whole screen.
-    const { visible: petShown, pet, restorePet } = usePetRecord();
+    const { visible: petShown, pet, status: petStatus, restorePet } = usePetRecord();
 
     useEffect(() => {
         NotificationService.getNotificationsEnabled().then(setNotificationsEnabled);
@@ -656,6 +656,10 @@ function Homepage(props){
         ActionSheetIOS.showActionSheetWithOptions(
             {
                 title: 'Export ADHDone Data',
+                // Say so when the pet can't be included, rather than drop it silently.
+                message: petStatus === 'unavailable'
+                    ? "Your pet couldn't be read this session, so it won't be in this backup."
+                    : undefined,
                 options: ['Copy as JSON', 'Save Backup File…', 'Cancel'],
                 cancelButtonIndex: 2,
             },
@@ -693,7 +697,7 @@ function Homepage(props){
                 }
             }
         );
-    }, [mainLists, pet]);
+    }, [mainLists, pet, petStatus]);
 
     const handleImport = useCallback(async () => {
         tapLight();
@@ -729,7 +733,7 @@ function Homepage(props){
             importedPet != null && pet != null && choosePet(pet, importedPet) === importedPet;
         Alert.alert(
             'Replace all data?',
-            `Import ${listCount} main list${listCount === 1 ? '' : 's'} with ${taskCount} task${taskCount === 1 ? '' : 's'}${keepImportedPet ? ` and ${importedPet.name} the pet` : ''}? This replaces everything currently in the app.`,
+            `Import ${listCount} main list${listCount === 1 ? '' : 's'} with ${taskCount} task${taskCount === 1 ? '' : 's'}${keepImportedPet ? ` and ${importedPet.name} the pet` : ''}? This replaces everything currently in the app.${importedPet && !pet ? " (The backup's pet can't be restored right now.)" : ''}`,
             [
                 { text: 'Cancel', style: 'cancel' },
                 {

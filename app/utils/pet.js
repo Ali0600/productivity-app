@@ -193,6 +193,15 @@ const isFiniteNumber = (n) => typeof n === 'number' && Number.isFinite(n);
 const count = (n) => (isFiniteNumber(n) && n > 0 ? Math.floor(n) : 0);
 const msOrNull = (n) => (isFiniteNumber(n) && n > 0 ? n : null);
 
+/**
+ * A watermark more than the grace ahead of the clock (the clock was set back)
+ * moves to just before now. Not to now itself: the task that triggered this
+ * pass was stamped moments before now and would be swallowed. The cost is that
+ * an already-counted task stamped in that last window may count again: rare,
+ * and better than losing a real one.
+ */
+const clampToClock = (ms, now) => (ms > now + FUTURE_GRACE_MS ? now - FUTURE_GRACE_MS : ms);
+
 const cleanBaseline = (raw) => {
   if (!raw || typeof raw !== 'object') return null;
   const { days, completions, activeDays } = raw;
@@ -246,7 +255,7 @@ export const normalizePet = (raw, now) => {
     hatchedAt: msOrNull(raw.hatchedAt),
     // A watermark ahead of the clock (a fast-clock backup, a clock set back)
     // would freeze feeding until that time, so pull it back to now.
-    watermark: Math.min(msOrNull(raw.watermark) ?? adoptedAt, now + FUTURE_GRACE_MS),
+    watermark: clampToClock(msOrNull(raw.watermark) ?? adoptedAt, now),
     lastSnackAt: msOrNull(raw.lastSnackAt),
     snacks: count(raw.snacks),
     careDays: count(raw.careDays),
@@ -576,14 +585,23 @@ const feed = (pet, fresh, events) => {
 const rollover = (pet, now, events) => {
   const thisMonday = weekStart(now);
   const firstMonday = weekStart(pet.adoptedAt);
-  let from = pet.cozyCheckedThrough != null ? addDays(pet.cozyCheckedThrough, 7) : firstMonday;
+  // The stored pointer is an instant: after a time-zone move it is no longer a
+  // local Monday midnight, so snap it back to one. A pointer ahead of the clock
+  // (the date was set forward once) would stop cozy weeks until that date, so
+  // fall back to last week.
+  let checked =
+    pet.cozyCheckedThrough != null ? weekStart(addDays(pet.cozyCheckedThrough, 3)) : null;
+  if (checked != null && dayDiff(checked, thisMonday) <= 0) checked = addDays(thisMonday, -7);
+  let from = checked != null ? addDays(checked, 7) : firstMonday;
   const backstop = addDays(thisMonday, -7 * MAX_WEEKS_PER_PASS);
   if (from < backstop) from = backstop;
 
   let next = pet;
-  let lastChecked = pet.cozyCheckedThrough;
+  let lastChecked = checked;
   let awarded = 0;
-  for (let monday = from; monday < thisMonday; monday = addDays(monday, 7)) {
+  // Compare calendar days, not milliseconds, so a 23- or 25-hour day can't
+  // land a week boundary on the wrong side.
+  for (let monday = from; dayDiff(monday, thisMonday) > 0; monday = addDays(monday, 7)) {
     if (isCozyWeek(pet, monday)) awarded += 1;
     lastChecked = monday;
   }
@@ -592,7 +610,10 @@ const rollover = (pet, now, events) => {
     if (awarded > 0) events.push({ type: 'cozy', weeks: next.cozyWeeks });
   }
 
-  const cutoff = addDays(startOfDay(now), -DAY_WINDOW);
+  // Prune relative to the last snack too, so one launch with the date set far
+  // ahead can't wipe today's bowl and this week's diary.
+  const pruneFrom = Math.min(now, next.lastSnackAt ?? now);
+  const cutoff = addDays(startOfDay(pruneFrom), -DAY_WINDOW);
   const stale = Object.keys(next.days).filter((k) => keyToDayStart(k) < cutoff);
   if (stale.length > 0) {
     const days = { ...next.days };
@@ -610,6 +631,10 @@ const rollover = (pet, now, events) => {
 export const advancePet = (pet, mainLists, now) => {
   const events = [];
   let current = takeBaseline(pet, mainLists);
+  // A watermark ahead of the clock (the clock was set back) would freeze
+  // feeding until that time; bring it back on every pass, not only at load.
+  const watermark = clampToClock(current.watermark, now);
+  if (watermark !== current.watermark) current = { ...current, watermark };
   const fresh = collectCompletions(mainLists, current.watermark, now);
   // A task finished before anyone saw the nap (straight into a list, say) still
   // wakes the pet first, so a long break keeps its welcome-back gift.
