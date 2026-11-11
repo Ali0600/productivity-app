@@ -1,0 +1,394 @@
+[
+  {
+    "name": "watermark boundary recounts a snack",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "if (at == null || at <= after || at > latest) continue;",
+    "replace": "if (at == null || at < after || at > latest) continue;",
+    "expectCaughtBy": ["replaying the same log"]
+  },
+  {
+    "name": "no clock grace at all: future stamps feed now",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "if (at == null || at <= after || at > latest) continue;",
+    "replace": "if (at == null || at <= after) continue;",
+    "expectCaughtBy": ["far-future completion"]
+  },
+  {
+    "name": "clock grace zero",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "const FUTURE_GRACE_MS = 10 * 60 * 1000;",
+    "replace": "const FUTURE_GRACE_MS = 0;",
+    "expectCaughtBy": ["up to 10 minutes ahead"]
+  },
+  {
+    "name": "no time-order sort",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  out.sort((a, b) => a.at - b.at || (a.taskId < b.taskId ? -1 : a.taskId > b.taskId ? 1 : 0));",
+    "replace": "",
+    "expectCaughtBy": ["taken in time order"]
+  },
+  {
+    "name": "pre-adoption completions count",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  watermark: now,",
+    "replace": "  watermark: 0,",
+    "expectCaughtBy": ["before adoption never count"]
+  },
+  {
+    "name": "restored watermark not clamped",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "    watermark: Math.min(msOrNull(raw.watermark) ?? adoptedAt, now + FUTURE_GRACE_MS),",
+    "replace": "    watermark: msOrNull(raw.watermark) ?? adoptedAt,",
+    "expectCaughtBy": ["pulled back"]
+  },
+  {
+    "name": "every snack is a care day",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "    if (before === 0) next.careDays += 1;",
+    "replace": "    next.careDays += 1;",
+    "expectCaughtBy": ["several snacks on one day are one care day"]
+  },
+  {
+    "name": "full fires on every snack past the third",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "    if (nth === FULL_AT) events.push({ type: 'full', at: c.at });",
+    "replace": "    if (nth >= FULL_AT) events.push({ type: 'full', at: c.at });",
+    "expectCaughtBy": ["only the third"]
+  },
+  {
+    "name": "nap starts a day late",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "emptyDaysBefore(pet, now) >= NAP_AFTER_EMPTY_DAYS &&",
+    "replace": "emptyDaysBefore(pet, now) > NAP_AFTER_EMPTY_DAYS &&",
+    "expectCaughtBy": ["two empty days → napping"]
+  },
+  {
+    "name": "calm mode ignored",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  if (pet.calm) return 'fed';",
+    "replace": "  if (pet.calm === 'never') return 'fed';",
+    "expectCaughtBy": ["calm mode never dips"]
+  },
+  {
+    "name": "dayDiff floors (a DST-only bug)",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "export const dayDiff = (a, b) => Math.round((startOfDay(b) - startOfDay(a)) / 86400000);",
+    "replace": "export const dayDiff = (a, b) => Math.floor((startOfDay(b) - startOfDay(a)) / 86400000);",
+    "expectCaughtBy": ["spring-forward"]
+  },
+  {
+    "name": "dayDiff ignores day boundaries",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "export const dayDiff = (a, b) => Math.round((startOfDay(b) - startOfDay(a)) / 86400000);",
+    "replace": "export const dayDiff = (a, b) => Math.round((b - a) / 86400000);",
+    "expectCaughtBy": ["spring-forward"]
+  },
+  {
+    "name": "kid at 8 care days",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  { key: 'kid', label: 'Kid', minCareDays: 7, room: 'garden' },",
+    "replace": "  { key: 'kid', label: 'Kid', minCareDays: 8, room: 'garden' },",
+    "expectCaughtBy": ["7 care days"]
+  },
+  {
+    "name": "new trick bar starts empty",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "      next.trickProgress = TRICK_HEAD_START;",
+    "replace": "      next.trickProgress = 0;",
+    "expectCaughtBy": ["10th snack teaches the first trick"]
+  },
+  {
+    "name": "welcome head start can finish a bar",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "      trickProgress: Math.min(TRICK_SLOTS - 1, next.trickProgress + WELCOME_BACK_SLOTS),",
+    "replace": "      trickProgress: next.trickProgress + WELCOME_BACK_SLOTS,",
+    "expectCaughtBy": ["never finishes a trick bar"]
+  },
+  {
+    "name": "no daily gift cap",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "if (next.lastGiftDay !== day && hashUnit(`${seed}#gift`) < GIFT_CHANCE) {",
+    "replace": "if (hashUnit(`${seed}#gift`) < GIFT_CHANCE) {",
+    "expectCaughtBy": ["at most one surprise gift a day"]
+  },
+  {
+    "name": "every completion brings a gift",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "export const GIFT_CHANCE = 0.18;",
+    "replace": "export const GIFT_CHANCE = 1;",
+    "expectCaughtBy": ["about 18%"]
+  },
+  {
+    "name": "gifts may repeat",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  const source = unfound.length > 0 ? unfound : pool;",
+    "replace": "  const source = pool;",
+    "expectCaughtBy": ["gifts never repeat"]
+  },
+  {
+    "name": "wake does not mark the nap",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  let next = { ...pet, wokeFor: pet.lastSnackAt, wokeOn: dayKey(now) };",
+    "replace": "  let next = { ...pet, wokeOn: dayKey(now) };",
+    "expectCaughtBy": ["wakes it once"]
+  },
+  {
+    "name": "welcome gift after 6 empty days",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "export const WELCOME_BACK_AFTER_DAYS = 7;",
+    "replace": "export const WELCOME_BACK_AFTER_DAYS = 6;",
+    "expectCaughtBy": ["starts at exactly 7"]
+  },
+  {
+    "name": "no wake before feeding",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  if (fresh.length > 0 && needsWake(current, fresh[0].at)) {",
+    "replace": "  if (false) {",
+    "expectCaughtBy": ["before anyone saw the nap"]
+  },
+  {
+    "name": "nap greeting repeats every day",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "    if (pet.wokeOn === dayKey(now)) {",
+    "replace": "    if (pet.wokeOn !== 'never') {",
+    "expectCaughtBy": ["never a running count"]
+  },
+  {
+    "name": "three rest days a week",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "export const REST_DAYS_PER_WEEK = 2;",
+    "replace": "export const REST_DAYS_PER_WEEK = 3;",
+    "expectCaughtBy": ["first two empty days of a week are rest days"]
+  },
+  {
+    "name": "egg days judged as missed",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "const judgedFrom = (pet) => (isHatched(pet) ? startOfDay(pet.hatchedAt) : Infinity);",
+    "replace": "const judgedFrom = (pet) => startOfDay(pet.adoptedAt);",
+    "expectCaughtBy": ["days as an egg are onboarding"]
+  },
+  {
+    "name": "a week with no care can be cozy",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  return care > 0 && empty <= REST_DAYS_PER_WEEK;",
+    "replace": "  return empty <= REST_DAYS_PER_WEEK;",
+    "expectCaughtBy": ["an egg week is never a cozy week"]
+  },
+  {
+    "name": "cozy pass skips old weeks",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  const backstop = addDays(thisMonday, -7 * MAX_WEEKS_PER_PASS);",
+    "replace": "  const backstop = addDays(thisMonday, -7 * 10);",
+    "expectCaughtBy": ["reopens months later"]
+  },
+  {
+    "name": "no pruning",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  const stale = Object.keys(next.days).filter((k) => keyToDayStart(k) < cutoff);",
+    "replace": "  const stale = [];",
+    "expectCaughtBy": ["old per-day counts are pruned"]
+  },
+  {
+    "name": "normalize keeps unknown tricks",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "    ? TRICKS.map((t) => t.key).filter((k) => raw.tricks.includes(k))",
+    "replace": "    ? raw.tricks.filter((k) => typeof k === 'string')",
+    "expectCaughtBy": ["bad fields fall back"]
+  },
+  {
+    "name": "name neither cleaned nor capped",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  const trimmed = raw.replace(/\\s+/g, ' ').trim().slice(0, MAX_NAME_LENGTH).trim();",
+    "replace": "  const trimmed = raw.trim();",
+    "expectCaughtBy": ["names are trimmed, capped"]
+  },
+  {
+    "name": "a blaming nap line",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "      return pet.calm ? `${name} is content.` : `${name} is napping.`;",
+    "replace": "      return pet.calm ? `${name} is content.` : `${name} is hungry because you forgot.`;",
+    "expectCaughtBy": ["no line ever blames the user"]
+  },
+  {
+    "name": "belly countdown back in the copy",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  if (today >= 1) return `${name} had ${today === 1 ? 'a snack' : `${today} snacks`} today.`;",
+    "replace": "  if (today >= 1) return `${name} had a snack. ${FULL_AT - today} more for a full belly.`;",
+    "expectCaughtBy": ["no task-for-reward countdown"]
+  },
+  {
+    "name": "placeholder +N off by one",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "i === shown - 1 && unfound > shown ? `+${unfound - shown + 1}` : '?'",
+    "replace": "i === shown - 1 && unfound > shown ? `+${unfound - shown}` : '?'",
+    "expectCaughtBy": ["found,"]
+  },
+  {
+    "name": "placeholders never stop at the row end",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  const shown = Math.min(unfound, toRowEnd);",
+    "replace": "  const shown = unfound;",
+    "expectCaughtBy": ["found,"]
+  },
+  {
+    "name": "baseline recomputed from the live log",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  if (pet.baseline != null || !Array.isArray(mainLists) || mainLists.length === 0) return pet;",
+    "replace": "  if (!Array.isArray(mainLists) || mainLists.length === 0) return pet;",
+    "expectCaughtBy": ["never shrinks the baseline"]
+  },
+  {
+    "name": "baseline taken from a failed load",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  if (pet.baseline != null || !Array.isArray(mainLists) || mainLists.length === 0) return pet;",
+    "replace": "  if (pet.baseline != null || !Array.isArray(mainLists)) return pet;",
+    "expectCaughtBy": ["failed to load"]
+  },
+  {
+    "name": "baseline not clipped to the log start",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  const from = Math.max(addDays(end, -BASELINE_DAYS), startOfDay(earliest));",
+    "replace": "  const from = addDays(end, -BASELINE_DAYS);",
+    "expectCaughtBy": ["short history gives a short baseline"]
+  },
+  {
+    "name": "since counts the unfinished day",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "  const todaySnacks = snacksOn(pet, now);",
+    "replace": "  const todaySnacks = 0;",
+    "expectCaughtBy": ["whatever the hour you look"]
+  },
+  {
+    "name": "import always takes the backup pet",
+    "file": "app/utils/pet.js",
+    "test": "app/utils/__tests__/pet.test.js",
+    "find": "    if (a[i] !== b[i]) return a[i] > b[i] ? imported : current;",
+    "replace": "    if (a[i] !== b[i]) return imported;",
+    "expectCaughtBy": ["older backup never rolls the pet back"]
+  },
+  {
+    "name": "failed read falls back to a new egg",
+    "file": "app/services/petService.js",
+    "test": "app/services/__tests__/petService.test.js",
+    "find": "    console.error('Error reading the pet from storage:', error);\n    return { pet: null, error };",
+    "replace": "    console.error('Error reading the pet from storage:', error);\n    return { pet: createPet(now), created: true };",
+    "expectCaughtBy": ["a failed read gives no pet"]
+  },
+  {
+    "name": "unreadable record not parked",
+    "file": "app/services/petService.js",
+    "test": "app/services/__tests__/petService.test.js",
+    "find": "    await AsyncStorage.setItem(PET_CORRUPT_KEY, raw);",
+    "replace": "    void raw;",
+    "expectCaughtBy": ["is parked, and stays parked"]
+  },
+  {
+    "name": "parking failure ignored",
+    "file": "app/services/petService.js",
+    "test": "app/services/__tests__/petService.test.js",
+    "find": "    console.error('Could not park the unreadable pet record:', error);\n    return { pet: null, error };",
+    "replace": "    console.error('Could not park the unreadable pet record:', error);",
+    "expectCaughtBy": ["fails closed"]
+  },
+  {
+    "name": "savePet throws",
+    "file": "app/services/petService.js",
+    "test": "app/services/__tests__/petService.test.js",
+    "find": "    console.error('Error saving the pet:', error);\n    return false;",
+    "replace": "    throw error;",
+    "expectCaughtBy": ["reports a failed write"]
+  },
+  {
+    "name": "hatch not prioritised",
+    "file": "app/utils/petMessages.js",
+    "test": "app/utils/__tests__/petMessages.test.js",
+    "find": "  if (find(events, 'hatch')) {",
+    "replace": "  if (find(events, 'hatch') && false) {",
+    "expectCaughtBy": ["hatching comes first"]
+  },
+  {
+    "name": "stage ignored",
+    "file": "app/utils/petMessages.js",
+    "test": "app/utils/__tests__/petMessages.test.js",
+    "find": "  const stage = findLast(events, 'stage');",
+    "replace": "  const stage = null;",
+    "expectCaughtBy": ["growing up outranks"]
+  },
+  {
+    "name": "new trick not shown off",
+    "file": "app/utils/petMessages.js",
+    "test": "app/utils/__tests__/petMessages.test.js",
+    "find": "      actions: [...eat, { type: 'trick', trick: trick.trick }],",
+    "replace": "      actions: [...eat],",
+    "expectCaughtBy": ["a new trick is shown off"]
+  },
+  {
+    "name": "full belly shows an unlearned trick",
+    "file": "app/utils/petMessages.js",
+    "test": "app/utils/__tests__/petMessages.test.js",
+    "find": "    const showOff = known.length > 0 ? known[Math.abs(variant) % known.length] : null;",
+    "replace": "    const showOff = 'flip';",
+    "expectCaughtBy": ["shows off a trick it already knows", "no tricks yet just cheers"]
+  },
+  {
+    "name": "snack burst floods",
+    "file": "app/utils/petMessages.js",
+    "test": "app/utils/__tests__/petMessages.test.js",
+    "find": "  if (snacks.length > 3) {",
+    "replace": "  if (snacks.length > 99) {",
+    "expectCaughtBy": ["a burst of snacks"]
+  },
+  {
+    "name": "a blaming snack line",
+    "file": "app/utils/petMessages.js",
+    "test": "app/utils/__tests__/petMessages.test.js",
+    "find": "  (s) => `Munch munch ${s}`,",
+    "replace": "  (s) => `You forgot me! ${s}`,",
+    "expectCaughtBy": ["no reaction line blames"]
+  },
+  {
+    "name": "calm mode still yawns",
+    "file": "app/utils/petMessages.js",
+    "test": "app/utils/__tests__/petMessages.test.js",
+    "find": "  if (find(events, 'wake') && !pet?.calm) {",
+    "replace": "  if (find(events, 'wake')) {",
+    "expectCaughtBy": ["calm mode never plays the nap-and-yawn"]
+  }
+]

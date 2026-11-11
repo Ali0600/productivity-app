@@ -105,3 +105,27 @@ Two separate blind spots that combine badly. A listener for state *changes* only
 **Why it came up:** The Focus Gate always asked for Screen Time access the user had already granted. Apple's `AuthorizationCenter.shared.authorizationStatus` returns `notDetermined` for a short while after launch (documented in `react-native-device-activity`'s README), so the one synchronous read at mount recorded "not authorized". The `AppState` listener that would have corrected it never ran, because `'change'` only fires on a transition and the app launches *into* `active` — there is no `inactive → active` event at cold start. So the wrong value stuck for the whole session, and only tapping "Grant" fixed it, because that was the single code path that re-read the status after awaiting a native call.
 
 **Takeaway:** seed state from an explicit read *and* subscribe to changes — neither alone is sufficient. When the underlying value settles asynchronously, poll until it does rather than trusting the first read. And whenever a bug's workaround is "do the thing again", suspect a stale snapshot: the second attempt is usually just the first code path that re-reads.
+
+## Feed a new feature from the log the app already writes, through a watermark
+
+When a new feature must react to an event (here: a task being completed), the obvious move is to call it from every place the event happens. That list is maintained by hand, and the newest place is the one that forgets. If the event already leaves a record, the feature can read the record instead: remember the newest timestamp it has processed (the watermark), and on every change take only what is newer.
+
+**Why it came up:** the pet eats a snack for every completion. Completions happen in two Homepage handlers and can also arrive in bulk from a backup import (only those newer than the watermark count). Reading each task's `completions` log with a watermark covers all three with no call site, never takes a snack back when a task is deleted later, and heals a save lost to a crash, because the unprocessed completions are still in the log next launch. Three details make it safe: process new entries in time order (lists are not); never advance the watermark past "now" plus a little grace; and clamp a stored or imported watermark the same way on load. Otherwise one wrong clock stamp freezes the feature until that date.
+
+**Takeaway:** prefer deriving from an existing append-only record over adding calls at every producer. Store only the watermark and the running totals, and make the derivation return the same object when nothing changed, so replays are free.
+
+## Pin the test timezone to one with daylight saving
+
+`new Date(y, m, d)` maths is only interesting on days that are 23 or 25 hours long. CI runners default to UTC, which has no DST, so a day-boundary bug (flooring hours ÷ 24 across a spring-forward night, say) passes there and only fails for real users twice a year.
+
+**Why it came up:** the pet's moods count calendar days between snacks. A deliberate sabotage swapping `Math.round` for `Math.floor` in `dayDiff` survived every test until the suite was pinned to `America/New_York` (CET, this Mac's zone, has no DST change on the US date the test uses either). `jest.globalSetup.js` sets `process.env.TZ` once, before any worker starts, and a test asserts the pin is active so removing it fails loudly instead of quietly turning the DST tests into no-ops.
+
+**Takeaway:** set `TZ` in Jest's `globalSetup` (workers inherit it), pick a zone with DST, and write one test that fails if the pin is missing.
+
+## Unexpected rewards motivate; announced ones can undermine
+
+Rewards promised in advance for something people already want to do ("1 task = 1 coin") can reduce how often they choose to do it later: the overjustification effect. Unexpected rewards don't have that cost, and feedback that informs ("Laundry: done") works better than feedback that controls ("you should").
+
+**Why it came up:** designing the pet's economy. The Deci, Koestner & Ryan meta-analysis found expected tangible rewards undermined free-choice behaviour (d = −.36) while unexpected ones didn't (d = .01). So surprise gifts are never announced and come at most once a day, and the status lines say what happened ("Mochi had a snack today.") rather than counting down to the next reward. What is shown in advance is progress: the bowl, the trick bar ("4 more snacks to learn Spin", goal-gradient by design) and growth. A test bans blame words from every line.
+
+**Takeaway:** in any reward system, make the routine feedback informational, keep the extras unannounced, and never phrase a reward as a wage.

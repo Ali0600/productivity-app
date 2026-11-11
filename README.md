@@ -4,7 +4,8 @@
 
 A daily habit and task tracker for iOS. Adding something takes two taps, the home screen sorts
 everything by how long it's been neglected so whatever you've been avoiding is the first thing
-you see, and a notification engine reminds you without nagging. Built with React Native + Expo
+you see, and a notification engine reminds you without nagging. Every finished task also feeds a
+small virtual pet that grows with you and never punishes a day off. Built with React Native + Expo
 and shipped to TestFlight via EAS.
 
 ---
@@ -23,6 +24,11 @@ and shipped to TestFlight via EAS.
   3-level data model (main lists → side lists → tasks) that drives a home screen sorted by how stale each item is.
 - **Made a Liquid Glass UI** (`expo-glass-effect`) on a dark gradient, with haptics, swipe-to-
   complete/delete gestures, and drag-to-reorder lists.
+- **Gamified it with a research-backed virtual pet.** It eats a snack on every completed task,
+  grows by care days, learns tricks and finds surprise gifts. It is drawn with plain Views,
+  gradients and emoji and animated with Reanimated: no new native module, so it ships over the air. Its rules come from a source-checked review of 56
+  findings on gamification, streaks and ADHD reward processing, so it never punishes: the worst
+  state is a nap. See [docs/GAMIFICATION.md](docs/GAMIFICATION.md).
 - **Integrated Apple's Screen Time APIs** (FamilyControls / ManagedSettings / DeviceActivity) to
   build a "Focus Gate" that blocks chosen apps until a task list is done for the day. A native
   background schedule re-arms the block each morning without the app being opened.
@@ -98,6 +104,7 @@ npm run lint:fix      # ESLint with autofix
 npm run format        # Prettier write
 npm run format:check  # Prettier check (no writes)
 npm test              # Jest unit tests (jest-expo)
+npm run test:mutations  # Break each pet rule on purpose; a test must catch it (commit first)
 ```
 
 ## Project Structure
@@ -105,14 +112,23 @@ npm test              # Jest unit tests (jest-expo)
 ```
 App.js                      # Root: notification init, OTA check, renders TileGrid or Homepage
 app/
-  components/               # Tile, Task, List, GlassCard, IntervalSlider, CompletionBurst
-    modals/                 # TaskEditor, Messages, FocusGate (extracted from Homepage)
+  components/               # Tile, Task, List, GlassCard, IntervalSlider, CompletionBurst,
+                            #   TagRecovery, PetCard (home), PetPerch (list view)
+    modals/                 # TaskEditor, Messages, FocusGate (extracted from Homepage),
+                            #   Pet (opened from PetCard and Settings → Pet)
+    pet/                    # The pet itself: PetAvatar, PetRoom, petTheme, PetGallery (dev)
   context/AppStateContext   # All app state + AsyncStorage persistence
-  hooks/useAppState         # Thin hooks over the context
+  context/PetContext        # The pet: fed from the completion log, persisted under `pet`
+  hooks/                    # useAppState, usePet, usePetReactions: thin hooks over the contexts
   screens/                  # TileGrid (home), Homepage (list view)
-  services/                 # StorageService, NotificationService, focusGateService, haptics, logger
-  utils/                    # Pure helpers: id, dayKey, streaks, tagStats, focusGate, notificationRules
+  services/                 # StorageService, NotificationService, focusGateService, petService,
+                            #   haptics, logger
+    __tests__/              # petService storage tests
+  utils/                    # Pure helpers: id, dayKey, streaks, tagStats, focusGate,
+                            #   notificationRules, pet (the pet's rules), petMessages
     __tests__/              # Jest suites for the pure helpers
+scripts/mutation-check.js   # Breaks each pet rule on purpose; a test must catch it (npm run test:mutations)
+jest.globalSetup.js         # Pins every test run to a daylight-saving time zone
 targets/                    # Generated Screen Time extensions (Shield*, ActivityMonitor)
 .github/                    # CI workflows + Dependabot
 ```
@@ -132,12 +148,14 @@ Skills and practices this project shows:
   DeviceActivity) through an Expo config plugin with app-group-shared extensions, loaded defensively so
   a build without the native module degrades instead of crashing.
 - **Test design** — pure decision logic pulled out of the UI and native side effects, then proven by
-  breaking each guard on purpose and confirming the suite catches it.
+  breaking each guard on purpose: 25 deliberate sabotages of the pet's rules, every one caught,
+  with the suite pinned to a daylight-saving timezone so CI's UTC cannot hide day-boundary bugs.
 - **Fail-safe defaults** — enforcement paths that fail open, so a deleted or renamed dependency can
   never leave a user stuck behind a block they cannot clear.
 - **Local-first data engineering** — an AsyncStorage-backed model with debounced saving, schema
   normalization on load, checked backup import/export, and an append-only completion history
-  that drives streaks and analytics.
+  that drives streaks, analytics and the pet, which reads it through a watermark so no
+  completion path can skip it and a lost save heals on the next launch.
 
 ## License
 

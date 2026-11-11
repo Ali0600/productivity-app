@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { View, StyleSheet, Text, Modal, SafeAreaView, TouchableOpacity, TextInput, KeyboardAvoidingView, FlatList, ActivityIndicator, ActionSheetIOS, Alert, Switch, AppState } from "react-native";
+import { View, StyleSheet, Text, Modal, SafeAreaView, TouchableOpacity, TextInput, KeyboardAvoidingView, FlatList, ActivityIndicator, ActionSheetIOS, Alert, Switch, AppState, ScrollView } from "react-native";
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -33,6 +33,10 @@ import CompletionBurst from '../components/CompletionBurst';
 import MessagesModal from '../components/modals/MessagesModal';
 import TaskEditorModal from '../components/modals/TaskEditorModal';
 import FocusGateModal from '../components/modals/FocusGateModal';
+import PetModal from '../components/modals/PetModal';
+import PetPerch, { PERCH_SIZE } from '../components/PetPerch';
+import { usePetRecord } from '../hooks/usePet';
+import { choosePet, normalizePet } from '../utils/pet';
 import { evaluateGate, hasAnySelection, DEFAULT_GATE_CONFIG } from '../utils/focusGate';
 import * as FocusGate from '../services/focusGateService';
 
@@ -109,6 +113,9 @@ function Homepage(props){
     const [gateAuthStatus, setGateAuthStatus] = useState(FocusGate.AUTH_STATUS.notDetermined);
     const [gateSelectionMeta, setGateSelectionMeta] = useState(null);
     const [gateShieldActive, setGateShieldActive] = useState(false);
+    const [petModalVisible, setPetModalVisible] = useState(false);
+    // The record only: the pet's per-minute view would re-render this whole screen.
+    const { visible: petShown, pet, restorePet } = usePetRecord();
 
     useEffect(() => {
         NotificationService.getNotificationsEnabled().then(setNotificationsEnabled);
@@ -199,6 +206,18 @@ function Homepage(props){
         }
         setFocusGateVisible(true);
         setSettingsVisible(false);
+    }, []);
+
+    // Like Messages and Quiet Hours, the pet page returns to Settings on close.
+    const handleOpenPet = useCallback(() => {
+        tapLight();
+        setPetModalVisible(true);
+        setSettingsVisible(false);
+    }, []);
+
+    const handleClosePet = useCallback(() => {
+        setPetModalVisible(false);
+        setSettingsVisible(true);
     }, []);
 
     const handleRequestGateAuth = useCallback(async () => {
@@ -630,6 +649,8 @@ function Homepage(props){
             version: 1,
             exportedAt: new Date().toISOString(),
             mainLists,
+            // Optional: older backups have no pet, and import treats that as "keep mine".
+            ...(pet ? { pet } : {}),
         };
         const json = JSON.stringify(payload, null, 2);
         ActionSheetIOS.showActionSheetWithOptions(
@@ -672,7 +693,7 @@ function Homepage(props){
                 }
             }
         );
-    }, [mainLists]);
+    }, [mainLists, pet]);
 
     const handleImport = useCallback(async () => {
         tapLight();
@@ -701,9 +722,14 @@ function Homepage(props){
             (sum, ml) => sum + ml.sideLists.reduce((s, sl) => s + sl.tasks.length, 0),
             0
         );
+        const importedPet = payload.pet != null ? normalizePet(payload.pet, Date.now()) : null;
+        // Keep whichever pet has grown more, so restoring a backup never rolls it back.
+        // (Only with a live pet: if pet storage couldn't be read, there is nothing to restore into.)
+        const keepImportedPet =
+            importedPet != null && pet != null && choosePet(pet, importedPet) === importedPet;
         Alert.alert(
             'Replace all data?',
-            `Import ${listCount} main list${listCount === 1 ? '' : 's'} with ${taskCount} task${taskCount === 1 ? '' : 's'}? This replaces everything currently in the app.`,
+            `Import ${listCount} main list${listCount === 1 ? '' : 's'} with ${taskCount} task${taskCount === 1 ? '' : 's'}${keepImportedPet ? ` and ${importedPet.name} the pet` : ''}? This replaces everything currently in the app.`,
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -713,7 +739,7 @@ function Homepage(props){
                         // Safety hatch: stash the outgoing data before overwriting.
                         const snapshotOk = await StorageService.storeData(
                             'mainListsPreImportBackup',
-                            { savedAt: new Date().toISOString(), mainLists }
+                            { savedAt: new Date().toISOString(), mainLists, pet }
                         );
                         if (!snapshotOk) {
                             Alert.alert(
@@ -724,11 +750,12 @@ function Homepage(props){
                         }
                         success();
                         replaceMainLists(payload.mainLists);
+                        if (keepImportedPet) restorePet(importedPet);
                     },
                 },
             ]
         );
-    }, [mainLists, replaceMainLists]);
+    }, [mainLists, pet, replaceMainLists, restorePet]);
 
     const pulse = useSharedValue(0);
     useEffect(() => {
@@ -890,59 +917,74 @@ function Homepage(props){
                             colorScheme="dark"
                             tintColor="rgba(46, 46, 80, 0.45)"
                         >
-                            <Text style={styles.settingsTitle}>Notification Settings</Text>
+                            {/* Scrolls once the rows outgrow the card (large text sizes). */}
+                            <ScrollView contentContainerStyle={{ paddingBottom: 12 }}>
+                                <Text style={styles.settingsTitle}>Notification Settings</Text>
 
-                            <View style={styles.settingsRow}>
-                                <Text style={styles.settingsRowLabel}>Notifications</Text>
-                                <Switch
-                                    value={notificationsEnabled}
-                                    onValueChange={handleToggleNotifications}
-                                />
-                            </View>
+                                <View style={styles.settingsRow}>
+                                    <Text style={styles.settingsRowLabel}>Notifications</Text>
+                                    <Switch
+                                        value={notificationsEnabled}
+                                        onValueChange={handleToggleNotifications}
+                                    />
+                                </View>
 
-                            {currentMainList ? (
-                                <TouchableOpacity onPress={handleOpenMessages} style={styles.settingsRow}>
-                                    <Text style={styles.settingsRowLabel}>Manage Messages</Text>
+                                {currentMainList ? (
+                                    <TouchableOpacity onPress={handleOpenMessages} style={styles.settingsRow}>
+                                        <Text style={styles.settingsRowLabel}>Manage Messages</Text>
+                                        <SymbolView name="chevron.right" size={20} tintColor="white" />
+                                    </TouchableOpacity>
+                                ) : null}
+
+                                <TouchableOpacity onPress={handleOpenQuietHours} style={styles.settingsRow}>
+                                    <Text style={styles.settingsRowLabel}>Quiet Hours</Text>
+                                    <View style={styles.settingsRowValue}>
+                                        <Text style={styles.settingsValueText}>
+                                            {quietHoursEnabled
+                                                ? `${formatTimeOfDay(quietHoursStart)} – ${formatTimeOfDay(quietHoursEnd)}`
+                                                : 'Off'}
+                                        </Text>
+                                        <SymbolView name="chevron.right" size={20} tintColor="white" />
+                                    </View>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity onPress={handleOpenScheduled} style={styles.settingsRow}>
+                                    <Text style={styles.settingsRowLabel}>View Scheduled</Text>
                                     <SymbolView name="chevron.right" size={20} tintColor="white" />
                                 </TouchableOpacity>
-                            ) : null}
 
-                            <TouchableOpacity onPress={handleOpenQuietHours} style={styles.settingsRow}>
-                                <Text style={styles.settingsRowLabel}>Quiet Hours</Text>
-                                <View style={styles.settingsRowValue}>
-                                    <Text style={styles.settingsValueText}>
-                                        {quietHoursEnabled
-                                            ? `${formatTimeOfDay(quietHoursStart)} – ${formatTimeOfDay(quietHoursEnd)}`
-                                            : 'Off'}
-                                    </Text>
-                                    <SymbolView name="chevron.right" size={20} tintColor="white" />
-                                </View>
-                            </TouchableOpacity>
+                                <TouchableOpacity onPress={handleOpenFocusGate} style={styles.settingsRow}>
+                                    <Text style={styles.settingsRowLabel}>Focus Gate</Text>
+                                    <View style={styles.settingsRowValue}>
+                                        <Text style={styles.settingsValueText}>
+                                            {gateConfig.enabled ? 'On' : 'Off'}
+                                        </Text>
+                                        <SymbolView name="chevron.right" size={20} tintColor="white" />
+                                    </View>
+                                </TouchableOpacity>
 
-                            <TouchableOpacity onPress={handleOpenScheduled} style={styles.settingsRow}>
-                                <Text style={styles.settingsRowLabel}>View Scheduled</Text>
-                                <SymbolView name="chevron.right" size={20} tintColor="white" />
-                            </TouchableOpacity>
+                                {pet ? (
+                                    <TouchableOpacity onPress={handleOpenPet} style={styles.settingsRow}>
+                                        <Text style={styles.settingsRowLabel}>Pet</Text>
+                                        <View style={styles.settingsRowValue}>
+                                            <Text style={styles.settingsValueText}>
+                                                {pet.hidden ? 'Hidden' : pet.calm ? `${pet.name} · Calm` : pet.name}
+                                            </Text>
+                                            <SymbolView name="chevron.right" size={20} tintColor="white" />
+                                        </View>
+                                    </TouchableOpacity>
+                                ) : null}
 
-                            <TouchableOpacity onPress={handleOpenFocusGate} style={styles.settingsRow}>
-                                <Text style={styles.settingsRowLabel}>Focus Gate</Text>
-                                <View style={styles.settingsRowValue}>
-                                    <Text style={styles.settingsValueText}>
-                                        {gateConfig.enabled ? 'On' : 'Off'}
-                                    </Text>
-                                    <SymbolView name="chevron.right" size={20} tintColor="white" />
-                                </View>
-                            </TouchableOpacity>
+                                <TouchableOpacity onPress={handleExport} style={styles.settingsRow}>
+                                    <Text style={styles.settingsRowLabel}>Export Data</Text>
+                                    <SymbolView name="square.and.arrow.up" size={20} tintColor="white" />
+                                </TouchableOpacity>
 
-                            <TouchableOpacity onPress={handleExport} style={styles.settingsRow}>
-                                <Text style={styles.settingsRowLabel}>Export Data</Text>
-                                <SymbolView name="square.and.arrow.up" size={20} tintColor="white" />
-                            </TouchableOpacity>
-
-                            <TouchableOpacity onPress={handleImport} style={styles.settingsRow}>
-                                <Text style={styles.settingsRowLabel}>Import Data</Text>
-                                <SymbolView name="square.and.arrow.down" size={20} tintColor="white" />
-                            </TouchableOpacity>
+                                <TouchableOpacity onPress={handleImport} style={styles.settingsRow}>
+                                    <Text style={styles.settingsRowLabel}>Import Data</Text>
+                                    <SymbolView name="square.and.arrow.down" size={20} tintColor="white" />
+                                </TouchableOpacity>
+                            </ScrollView>
                         </GlassCard>
 
                         <GlassCard
@@ -1189,6 +1231,8 @@ function Homepage(props){
                         shieldActive={gateShieldActive}
                     />
 
+                    <PetModal visible={petModalVisible} onClose={handleClosePet} />
+
                     <SafeAreaView style={styles.productName}>
                         <GlassCard
                             style={styles.topBar}
@@ -1259,6 +1303,8 @@ function Homepage(props){
 
                     <FlatList
                         data={visibleTasks}
+                        // Room to scroll the last task clear of the pet sitting on the bar.
+                        contentContainerStyle={petShown ? { paddingBottom: PERCH_SIZE } : undefined}
                         keyExtractor={(item, index) => item.id || `task-${currentList}-${index}`}
                         renderItem={({ item, index }) => (
                             <Task
@@ -1279,23 +1325,26 @@ function Homepage(props){
                         }
                     />
 
-                    <GlassCard
-                        style={styles.bottomNav}
-                        tintColor="rgba(46, 46, 80, 0.45)"
-                        colorScheme="dark"
-                    >
-                        <TouchableOpacity onPress={() => cycleList(-1)}>
-                            <SymbolView name="chevron.left.circle.fill" size={50} tintColor="white" />
-                        </TouchableOpacity>
+                    <View>
+                        <GlassCard
+                            style={styles.bottomNav}
+                            tintColor="rgba(46, 46, 80, 0.45)"
+                            colorScheme="dark"
+                        >
+                            <TouchableOpacity onPress={() => cycleList(-1)}>
+                                <SymbolView name="chevron.left.circle.fill" size={50} tintColor="white" />
+                            </TouchableOpacity>
 
-                        <TouchableOpacity onPress={() => setModalVisible(true)}>
-                            <SymbolView name="plus.circle.fill" size={60} tintColor="white" />
-                        </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setModalVisible(true)}>
+                                <SymbolView name="plus.circle.fill" size={60} tintColor="white" />
+                            </TouchableOpacity>
 
-                        <TouchableOpacity onPress={() => cycleList(1)}>
-                            <SymbolView name="chevron.right.circle.fill" size={50} tintColor="white" />
-                        </TouchableOpacity>
-                    </GlassCard>
+                            <TouchableOpacity onPress={() => cycleList(1)}>
+                                <SymbolView name="chevron.right.circle.fill" size={50} tintColor="white" />
+                            </TouchableOpacity>
+                        </GlassCard>
+                        <PetPerch />
+                    </View>
 
                     <KeyboardAvoidingView behavior="padding" />
 

@@ -6,8 +6,62 @@ Forks where a real alternative existed, what was chosen, and what was left on th
 
 - **`expo-system-ui` for an explicit root-view background** (from "Killing the white band under the app-picker sheet") — pins the root view regardless of what the system default resolves to. Revisit at `userInterfaceStyle` in `app.config.js`.
 - **Manual-only Focus Gate arming** (from "How the Focus Gate re-arms") — an override for ad-hoc focus sessions, alongside the automatic daily re-arm. Revisit at the enable switch in `app/components/modals/FocusGateModal.js`.
+- **An always-content pet as the default** (from "What the pet does when you're away") — shipped as the opt-in Calm mode; make it the default if the mild moods ever read as pressure. Revisit at `createPet` in `app/utils/pet.js`.
 
 ---
+
+## 2026-11-10 — How finishing a task feeds the pet
+
+Chosen by Claude from the research in [GAMIFICATION.md](GAMIFICATION.md); not yet reviewed by the owner.
+
+**The fork:** whether a finished task feeds the pet directly, or earns food you then hand over.
+
+| Option | Tradeoff |
+| --- | --- |
+| **A. Eaten on the swipe** | The reward lands inside the gesture, which matters most with ADHD's steeper delay discounting. Less to do in the pet's own space. |
+| B. Earn treats, feed them by hand | An extra care ritual and a reason to visit the pet, but it delays the payoff, and banked treats leave a hungry pet beside finished tasks, which reads as unfair. |
+
+**Chosen: A.** The research's strongest ADHD-specific finding is that the reward has to be immediate; B moves it to later.
+
+- **B — rejected:** delays the payoff the whole feature depends on.
+
+**Revisit hook:** the `snack` events from `feed` in `app/utils/pet.js`, and `reactionFor` in `app/utils/petMessages.js`.
+
+## 2026-11-10 — What the pet does when you're away
+
+Chosen by Claude from the research in [GAMIFICATION.md](GAMIFICATION.md); not yet reviewed by the owner.
+
+**The fork:** how the pet reflects days with no finished tasks.
+
+| Option | Tradeoff |
+| --- | --- |
+| **A. Mild daily needs, floored at a nap** | Peckish each morning, napping after two empty days, fixed by any one task. Responds to what you do (a happy-and-sad pet doubled compliance in one small study, [GAMIFICATION](GAMIFICATION.md) [20]) without ever punishing. Some days even "peckish" may feel like pressure. |
+| B. Always content | Zero pressure, but a pet that never responds has little pull. |
+| C. Real consequences (sick, dies, runs away, loses levels) | Strong loss aversion, but punishment teaches avoidance, more so with ADHD, and death turns into grief or indifference. |
+
+**Chosen: A, with B as an opt-in Calm mode.** A is the version the research supports; B is one switch away for days that need it.
+
+- **B — deferred, worth trying:** as the default, if A turns out to feel like pressure in daily use.
+- **C — rejected:** every source on punishment points the same way.
+
+**Revisit hook:** `moodFor` and `NAP_AFTER_EMPTY_DAYS` in `app/utils/pet.js`.
+
+## 2026-11-10 — Where the pet's snacks come from in the code
+
+Chosen by Claude while building the pet; not yet reviewed by the owner.
+
+**The fork:** how a completion reaches the pet.
+
+| Option | Tradeoff |
+| --- | --- |
+| **A. Read the completion log through a watermark** | Every completion path feeds the pet with no call site to remember (two handlers today, plus backup import for completions newer than the watermark). Deleting a task never takes a snack back, and a lost save heals on the next launch. Needs care with clock skew and ordering. |
+| B. Award a snack from each completion handler | Simple and explicit, but every new way to complete a task has to remember the call, and the newest one is the one that forgets. |
+
+**Chosen: A.** The completion log already exists and every path writes to it, so reading it is the one place that cannot miss a path.
+
+- **B — rejected:** a hand-maintained "call this everywhere" list misses its newest member.
+
+**Revisit hook:** `collectCompletions` and `feed` in `app/utils/pet.js`.
 
 ## 2026-08-03 — What unlocks the Focus Gate
 

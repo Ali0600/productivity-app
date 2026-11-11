@@ -6,6 +6,7 @@ import Homepage from './app/screens/Homepage';
 import TileGrid from './app/screens/TileGrid';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppStateProvider } from './app/context/AppStateContext';
+import { PetProvider } from './app/context/PetContext';
 import { useMainLists } from './app/hooks/useAppState';
 import NotificationService from './app/services/notificationService';
 import { log } from './app/services/logger';
@@ -96,7 +97,9 @@ export default function App() {
       >
         <StatusBar style="light" />
         <AppStateProvider>
-          <RootScreen />
+          <PetProvider>
+            <RootScreen />
+          </PetProvider>
         </AppStateProvider>
       </LinearGradient>
     </GestureHandlerRootView>
