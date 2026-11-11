@@ -129,3 +129,40 @@ Rewards promised in advance for something people already want to do ("1 task = 1
 **Why it came up:** designing the pet's economy. The Deci, Koestner & Ryan meta-analysis found expected tangible rewards undermined free-choice behaviour (d = −.36) while unexpected ones didn't (d = .01). So surprise gifts are never announced and come at most once a day, and the status lines say what happened ("Mochi had a snack today.") rather than counting down to the next reward. What is shown in advance is progress: the bowl, the trick bar ("4 more snacks to learn Spin", goal-gradient by design) and growth. A test bans blame words from every line.
 
 **Takeaway:** in any reward system, make the routine feedback informational, keep the extras unannounced, and never phrase a reward as a wage.
+
+## Plant a bug on purpose to find out whether a test would catch it
+
+Coverage tells you which lines ran during the tests, not whether any test would notice those lines being wrong. Mutation testing checks that directly: change one thing the code relies on (a constant, a `<` turned into `<=`, a deleted line), run the tests, and see whether anything goes red. A change that nothing notices, a "survivor", marks a rule no test protects.
+
+**Why it came up:** the pet engine is almost all small rules: when the bowl counts as full, how often a surprise gift can drop, how many quiet days come before the welcome-back gift. `npm run test:mutations` (`scripts/mutation-check.js`) applies the 56 mutations in `scripts/pet-mutations.json` one at a time, runs that file's Jest suite, then puts the original bytes back and checks their hash. It refuses to start while a target file has uncommitted changes, so a crash mid-run can never leave a planted bug mixed into real work. Early runs had survivors: the gift chance and the 7-day welcome-back threshold, among others, could be changed with every test still green, and each survivor became a new test. Every mutation also names the test that must catch it, because a mutant that only an unrelated test catches can hide that the test written for that rule checks nothing.
+
+**Takeaway:** for code that is mostly rules, run a mutation pass before trusting the tests. Each survivor is a missing test, and naming the test that should catch each mutation keeps the harness honest.
+
+## A screenshot is one frame: record the animation and lay its frames out in a grid
+
+Animation bugs (an overshoot, a flash, a jump at the end) live between the frames a screenshot happens to catch. Recording the simulator and tiling the video's frames into one image shows the whole motion at once, and two grids side by side compare a change before and after.
+
+**Why it came up:** the pet's speech bubble entered with a spring. Every screenshot looked right, but the frame grid showed the bubble swelling to about twice its size before it settled, so it now uses a plain 200 ms zoom (`ZoomIn.duration(200)`). The same grids checked the hatch, eating, trick, nap and welcome-back animations.
+
+```bash
+xcrun simctl io booted recordVideo --codec=h264 --force clip.mp4   # Ctrl-C stops it and writes the file
+ffmpeg -v error -y -i clip.mp4 -vf "fps=8,scale=260:-2,tile=6x3:padding=4:color=white" -frames:v 1 sheet.png
+```
+
+**Takeaway:** check motion with a frame grid, not a still. A 6×3 grid at 8 fps covers the first 2¼ seconds of the clip (`-ss 1.5` before `-i` starts later), and `crop=w:h:x:y` before `scale` zooms in on one element.
+
+## Keep a ticking clock in its own React context
+
+Every component that reads a React context re-renders whenever the context's value changes. If one context carries both data that rarely changes and a clock that ticks every minute, everything that reads it re-renders every minute, including screens that never show the time.
+
+**Why it came up:** the pet's mood and status line depend on the time, so its provider keeps a clock that ticks every 60 seconds. At first the clock sat in the same context as everything else: a probe that read only the pet record rendered 5 times in 5 idle minutes, and the whole task-list screen, which never shows the time, re-rendered with it. The provider now offers two contexts: `PetContext` (the saved pet and its actions, which change only when something happens) and `PetViewContext` (the derived mood plus the clock). `Homepage` reads only the first, through `usePetRecord()`. The same review found `memo(PetAvatar)` doing nothing, because each parent passed a new inline `onPress` function on every render; a stable `useCallback` fixed that.
+
+**Takeaway:** split a context by how often its parts change, and give anything time-driven its own value. `memo` only helps when the props really stay the same: a function created during render is a new prop every time.
+
+## Fire once-per-event side effects where the event is made, not in each view
+
+A haptic or a screen-reader announcement placed in each component that shows an event fires once per mounted component, including components that are mounted but not on screen.
+
+**Why it came up:** at first each pet view handled the reaction to a finished task, haptic and VoiceOver line included. The pet page is a modal that stays mounted while closed, so on the list screen a probe counted 2 announcements and 2 haptics per event instead of 1, and still 2 with the pet switched off, where 0 was expected. Now the provider works out one reaction per batch of events and fires the haptic and the announcement there, skipping both while the pet is hidden; the views only animate.
+
+**Takeaway:** put once-per-event effects (haptics, sounds, announcements, analytics) where the event is produced, and let the views that subscribe handle only what they draw. A closed modal that stays mounted still counts as a subscriber.
