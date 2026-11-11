@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { SymbolView } from 'expo-symbols';
@@ -52,10 +53,21 @@ export const tapReaction = (view) => {
   return { type: 'pet' };
 };
 
+/**
+ * A tap handler for an on-screen pet that keeps its identity between renders
+ * (until the pet's view changes), so the memoized PetAvatar can skip renders.
+ */
+export const usePetTap = (view, play) =>
+  useCallback(() => {
+    tapLight();
+    play(tapReaction(view));
+  }, [view, play]);
+
 /** The pet's spot at the top of the home screen. Tap the pet to play; tap the rest to open its page. */
 function PetCard({ onOpen, style }) {
   const { visible, pet, view } = usePet();
   const { action, message, play } = usePetReactions(visible);
+  const onPetPress = usePetTap(view, play);
   // The first look after a nap wakes the pet; the wake batch plays the animation.
   useWakeOnView(visible);
 
@@ -73,10 +85,7 @@ function PetCard({ onOpen, style }) {
               mood={view.mood}
               color={pet.color}
               action={action}
-              onPress={() => {
-                tapLight();
-                play(tapReaction(view));
-              }}
+              onPress={onPetPress}
               accessibilityLabel={`${petDisplayName(pet)}. ${view.line} Tap to play.`}
             />
           </PetRoom>

@@ -15,7 +15,7 @@ import GlassCard from '../GlassCard';
 import PetAvatar from '../pet/PetAvatar';
 import PetRoom from '../pet/PetRoom';
 import { PET_PALETTES } from '../pet/petTheme';
-import { SnackBowl, TrickBar, tapReaction } from '../PetCard';
+import { SnackBowl, TrickBar, usePetTap } from '../PetCard';
 import { usePet } from '../../hooks/usePet';
 import { usePetReactions } from '../../hooks/usePetReactions';
 import {
@@ -138,6 +138,7 @@ const HelpingStats = ({ stats, name }) => {
 function PetModal({ visible, onClose }) {
   const { pet, view, now, rename, setColor, setCalm, setHidden } = usePet();
   const { action, play } = usePetReactions(visible);
+  const onPetPress = usePetTap(view, play);
 
   const stats = useMemo(
     () => (visible && pet ? helpingStats(pet, now) : null),
@@ -184,10 +185,7 @@ function PetModal({ visible, onClose }) {
                 mood={view.mood}
                 color={pet.color}
                 action={action}
-                onPress={() => {
-                  tapLight();
-                  play(tapReaction(view));
-                }}
+                onPress={onPetPress}
                 accessibilityLabel={`${displayName}. ${view.line} Tap to play.`}
               />
             </PetRoom>

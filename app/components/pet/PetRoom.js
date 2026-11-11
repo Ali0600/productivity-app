@@ -21,7 +21,9 @@ const DECOR_SLOTS = [
  * Purely presentational; give it a size through `style`.
  */
 export default function PetRoom({ theme, style, children }) {
-  const room = ROOM_THEMES[theme] || ROOM_THEMES[FALLBACK_THEME];
+  // An own-key check, so inherited names such as 'toString' fall back too.
+  const room =
+    ROOM_THEMES[Object.prototype.hasOwnProperty.call(ROOM_THEMES, theme) ? theme : FALLBACK_THEME];
   // Decor scales with the room, so it waits for the first layout.
   const [decorSize, setDecorSize] = useState(0);
   const onLayout = useCallback((event) => {

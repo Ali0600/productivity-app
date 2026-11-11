@@ -76,8 +76,20 @@ const GLOSS = ['rgba(255, 255, 255, 0.85)', 'rgba(255, 255, 255, 0.04)'];
 const HEARTS = ['💖', '💗'];
 const DOT_COLORS = ['#fde68a', '#c7d2fe', '#86efac'];
 
+// The figure's ground line and the centre of its turns, in % of its S x S box.
+const GROUND_PCT = 94.5;
+const SPIN_PCT = 62.5;
 const ORIGIN_BOTTOM = ['50%', '100%', 0];
-const ORIGIN_FIGURE_GROUND = ['50%', '94.5%', 0];
+const ORIGIN_FIGURE_GROUND = ['50%', `${GROUND_PCT}%`, 0];
+
+// The parts each stage draws besides the body and face. PetFigure draws from
+// this and figureGeometry outlines from it, so the two cannot disagree.
+const STAGE_PARTS = {
+  baby: { sprout: true, ears: false, tail: false, tuft: false },
+  kid: { sprout: true, ears: true, tail: false, tuft: false },
+  teen: { sprout: false, ears: true, tail: true, tuft: false },
+  adult: { sprout: false, ears: true, tail: true, tuft: true },
+};
 
 const EASE = {
   sine: Easing.inOut(Easing.sin),
@@ -171,6 +183,182 @@ const glowGeometry = (cx, cy, w, h) => ({
   inner: ellipse(cx, cy, w * 0.86, h * 0.84),
 });
 
+// ---------------------------------------------------------------------------
+// Staying inside the box. Only particles may leave the size x size box, so the
+// figure's outline is kept as a convex hull, and every frame fitTravel moves
+// layer A just enough to keep the posed hull inside.
+// ---------------------------------------------------------------------------
+
+const ARC_STEPS = 8; // segments per rounded corner
+// Corner points sit this much past the radius, so the segments between them
+// touch the arc instead of cutting inside it: the outline encloses the shape.
+const ARC_PAD = 1 / Math.cos(Math.PI / 4 / ARC_STEPS);
+// The most a breath grows the figure on either axis (a nap breathes deepest).
+const DEEP_BREATH = 1.05;
+const percentOf = (value, length) =>
+  typeof value === 'string' ? (parseFloat(value) / 100) * length : value;
+
+/** Points along a laid-out box's rounded outline, after the box's own rotate/scale. */
+function outlinePoints(s) {
+  const { left, top, width: w, height: h } = s;
+  const base = s.borderRadius || 0;
+  const tl = s.borderTopLeftRadius ?? base;
+  const tr = s.borderTopRightRadius ?? base;
+  const br = s.borderBottomRightRadius ?? base;
+  const bl = s.borderBottomLeftRadius ?? base;
+  // Corner curves that would overlap on a side shrink together, as on screen.
+  const shrink = (side, a, b) => (a + b > side ? side / (a + b) : 1);
+  const f = Math.min(shrink(w, tl, tr), shrink(w, bl, br), shrink(h, tl, bl), shrink(h, tr, br));
+  const corners = [
+    [tl * f, tl * f, tl * f, Math.PI],
+    [w - tr * f, tr * f, tr * f, Math.PI * 1.5],
+    [w - br * f, h - br * f, br * f, 0],
+    [bl * f, h - bl * f, bl * f, Math.PI * 0.5],
+  ];
+  const ox = left + percentOf(s.transformOrigin ? s.transformOrigin[0] : '50%', w);
+  const oy = top + percentOf(s.transformOrigin ? s.transformOrigin[1] : '50%', h);
+  const transform = s.transform || [];
+  const points = [];
+  corners.forEach(([cx, cy, r, from]) => {
+    for (let i = 0; i <= ARC_STEPS; i += 1) {
+      const a = from + (i / ARC_STEPS) * (Math.PI / 2);
+      let x = left + cx + r * ARC_PAD * Math.cos(a);
+      let y = top + cy + r * ARC_PAD * Math.sin(a);
+      // The last transform in the list applies first, as on screen.
+      for (let j = transform.length - 1; j >= 0; j -= 1) {
+        const t = transform[j];
+        const dx = x - ox;
+        const dy = y - oy;
+        if (t.rotate !== undefined) {
+          const rad = (parseFloat(t.rotate) * Math.PI) / 180;
+          x = ox + dx * Math.cos(rad) - dy * Math.sin(rad);
+          y = oy + dx * Math.sin(rad) + dy * Math.cos(rad);
+        } else {
+          x = ox + dx * (t.scaleX ?? 1);
+          y = oy + dy * (t.scaleY ?? 1);
+        }
+      }
+      points.push([x, y]);
+    }
+  });
+  return points;
+}
+
+/** Convex hull (monotone chain), flattened to [x0, y0, x1, y1, ...] for the worklet. */
+function hullOf(points) {
+  const sorted = points.slice().sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = (list) => {
+    const out = [];
+    list.forEach((p) => {
+      while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+      out.push(p);
+    });
+    out.pop();
+    return out;
+  };
+  return half(sorted).concat(half(sorted.slice().reverse())).flat();
+}
+
+/**
+ * The room around a resting figure, in points, which jumps, slides and turns
+ * are sized from so that fitTravel rarely has to step in: `top`, `left` and
+ * `right` are the gaps to the box edges, `height` is how far the figure reaches
+ * above its ground point and `width` how wide it is. A turn rolls over the
+ * outline, so at its tallest angle it stands as tall as the outline's widest
+ * span: `turnHop` is how high it can still hop, and `turnSlide` how far it can
+ * travel sideways while it turns.
+ */
+function roomOf({ hull, gy, px, py, ox, oy, size }) {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let reach = 0;
+  let span = 0;
+  for (let i = 0; i < hull.length; i += 2) {
+    const x = hull[i];
+    const y = hull[i + 1];
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    reach = Math.max(reach, Math.hypot(x - px, y - py));
+    for (let j = 0; j < i; j += 2) span = Math.max(span, Math.hypot(x - hull[j], y - hull[j + 1]));
+  }
+  return {
+    top: oy + minY,
+    left: ox + minX,
+    right: size - ox - maxX,
+    height: gy - minY,
+    width: maxX - minX,
+    turnHop: Math.max(0, oy + gy - span * DEEP_BREATH),
+    turnSlide: Math.max(0, size / 2 - reach * DEEP_BREATH),
+  };
+}
+
+// The highest an upright jump can go with the figure still in the box, allowing
+// for the take-off stretch and a deep breath. Bigger stages fill more of the
+// box, so they jump lower.
+const jumpRoom = (geo) => Math.max(0, geo.room.top - geo.room.height * 0.1);
+
+/** Layer C's rotation (deg) and scale; `b` is the breath, 0..1. */
+function bodyPose(tilt, sway, sqX, sqY, pulse, b, amp) {
+  'worklet';
+  const grow = 1 + 0.045 * pulse;
+  return [tilt + sway * 3, sqX * (1 + amp * 0.5 * b) * grow, sqY * (1 + amp * b) * grow];
+}
+
+const clampInto = (value, lo, hi) => {
+  'worklet';
+  return lo > hi ? (lo + hi) / 2 : Math.min(Math.max(value, lo), hi);
+};
+
+/**
+ * Layer A's offset this frame, as [x, y, height above the ground]. Starts from
+ * the designed travel (hop, slide, twirl circle); while the figure turns it
+ * lifts it by however much deeper the turned outline reaches than the upright
+ * one, so it rolls over its own outline instead of sinking into the ground;
+ * then it nudges the result so the posed hull stays inside the box.
+ */
+function fitTravel(fit, twirl, slideX, hopY, spin, rotate, sx, sy) {
+  'worklet';
+  const { hull, gx, gy, px, py, ox, oy, size, twirlR } = fit;
+  const tr = (rotate * Math.PI) / 180;
+  const sr = (spin * Math.PI) / 180;
+  const cosT = Math.cos(tr);
+  const sinT = Math.sin(tr);
+  const cosS = Math.cos(sr);
+  const sinS = Math.sin(sr);
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let upright = -Infinity;
+  for (let i = 0; i < hull.length; i += 2) {
+    // Layer C: scale, then tilt, about the ground point; relative to the turn centre.
+    const dx = (hull[i] - gx) * sx;
+    const dy = (hull[i + 1] - gy) * sy;
+    const posedX = gx + dx * cosT - dy * sinT - px;
+    const posedY = gy + dx * sinT + dy * cosT - py;
+    upright = Math.max(upright, posedY);
+    // Layer B: the turn.
+    const turnedX = posedX * cosS - posedY * sinS;
+    const turnedY = posedX * sinS + posedY * cosS;
+    minX = Math.min(minX, turnedX);
+    maxX = Math.max(maxX, turnedX);
+    minY = Math.min(minY, turnedY);
+    maxY = Math.max(maxY, turnedY);
+  }
+  const roll = Math.max(0, maxY - upright);
+  const a = twirl * Math.PI * 2;
+  const x = clampInto(slideX + twirlR * Math.sin(a), -(ox + px + minX), size - (ox + px + maxX));
+  const y = clampInto(
+    hopY - twirlR * (1 - Math.cos(a)) - roll,
+    -(oy + py + minY),
+    size - (oy + py + maxY)
+  );
+  return [x, y, -(y + roll)];
+}
+
 /** The thought bubble beside the head (peckish), with two trailing dots. */
 function bubbleGeometry(size, ox, oy, S) {
   const r = size * 0.12;
@@ -186,6 +374,7 @@ function bubbleGeometry(size, ox, oy, S) {
     main: circle(cx, cy, r * 2),
     dots: [circle(x1, y1, Math.max(2, size * 0.035)), circle(x2, y2, Math.max(3, size * 0.055))],
     berrySize: Math.max(7, Math.round(size * 0.13)),
+    rise: size * 0.03, // the pop-in drifts up this far
   };
 }
 
@@ -324,6 +513,47 @@ function figureGeometry(size, stage) {
     transform: [{ rotate: `${45 + lean}deg` }],
   });
 
+  const tuft = [tear(k(0.09), k(0.482), k(0.29), -14), tear(k(0.064), k(0.548), k(0.305), 22)];
+  const tail = circle(k(0.885), k(0.83), k(0.13));
+  const body = {
+    position: 'absolute',
+    left: bodyLeft,
+    top: bodyTop,
+    width: k(0.8),
+    height: k(0.64),
+    // Domed top, flatter bottom: a mochi.
+    borderTopLeftRadius: k(0.38),
+    borderTopRightRadius: k(0.38),
+    borderBottomLeftRadius: k(0.22),
+    borderBottomRightRadius: k(0.22),
+    overflow: 'hidden',
+  };
+
+  // The outline of every part this stage draws (the face and cheeks sit inside
+  // the body), in charBox coordinates.
+  const parts = STAGE_PARTS[stage];
+  const outlined = [body];
+  if (parts.tail) outlined.push(tail);
+  if (parts.ears) outlined.push(...ears.map((ear) => ear.outer));
+  if (parts.sprout) outlined.push(sprout.back, sprout.stem, sprout.front);
+  if (parts.tuft) outlined.push(...tuft);
+  const groundY = k(GROUND_PCT / 100);
+  const fit = {
+    hull: hullOf(outlined.flatMap(outlinePoints)),
+    gx: S / 2,
+    gy: groundY,
+    px: S / 2,
+    py: k(SPIN_PCT / 100),
+    ox,
+    oy,
+    size,
+    twirlR: 0,
+  };
+  const room = roomOf(fit);
+  // The twirl's little circle, sized to clear the nearer side edge with room
+  // for its tilt and a breath.
+  fit.twirlR = Math.min(size * 0.07, Math.min(room.left, room.right) * 0.6);
+
   const [bellyX, bellyY] = local(0.5, 0.845);
   const [glossX, glossY] = local(0.3, 0.42);
   const [dotX, dotY] = local(0.405, 0.358);
@@ -332,23 +562,14 @@ function figureGeometry(size, stage) {
 
   return {
     charBox: { position: 'absolute', left: ox, top: oy, width: S, height: S },
-    spinOrigin: ['50%', '62.5%', 0],
+    spinOrigin: ['50%', `${SPIN_PCT}%`, 0],
     groundOrigin: ORIGIN_FIGURE_GROUND,
+    fit,
+    room,
+    parts,
     shadow: shadowGeometry(size / 2, oy + k(0.955), k(0.62), shadowH),
     glow: glowGeometry(size / 2, oy + k(0.6), k(0.98), k(0.8)),
-    body: {
-      position: 'absolute',
-      left: bodyLeft,
-      top: bodyTop,
-      width: k(0.8),
-      height: k(0.64),
-      // Domed top, flatter bottom: a mochi.
-      borderTopLeftRadius: k(0.38),
-      borderTopRightRadius: k(0.38),
-      borderBottomLeftRadius: k(0.22),
-      borderBottomRightRadius: k(0.22),
-      overflow: 'hidden',
-    },
+    body,
     belly: ellipse(bellyX, bellyY, k(0.34), k(0.16)),
     gloss: {
       ...glossShape,
@@ -362,8 +583,8 @@ function figureGeometry(size, stage) {
     mouth,
     ears,
     sprout,
-    tuft: [tear(k(0.09), k(0.482), k(0.29), -14), tear(k(0.064), k(0.548), k(0.305), 22)],
-    tail: circle(k(0.885), k(0.83), k(0.13)),
+    tuft,
+    tail,
     tailGloss: circle(k(0.905), k(0.8), Math.max(1.5, k(0.035))),
     bubble: bubbleGeometry(size, ox, oy, S),
     zOrigin: { x: ox + k(0.7), y: oy + k(0.26) },
@@ -460,10 +681,34 @@ function eggGeometry(size) {
 /** Layer, shadow and anchor geometry while the pet is still an egg. */
 function eggStageGeometry(size, egg) {
   const centreY = egg.top + egg.h / 2;
+  // The egg's outline: the upper half-ellipse and the lower half-circle.
+  const a = egg.w / 2;
+  const b2 = egg.h - a;
+  const cx = egg.box.left + a;
+  const cy = egg.box.top + b2;
+  const outline = [];
+  for (let i = 0; i <= 16; i += 1) {
+    const t = (i / 16) * Math.PI;
+    outline.push(
+      [cx - a * Math.cos(t), cy - b2 * Math.sin(t)],
+      [cx - a * Math.cos(t), cy + a * Math.sin(t)]
+    );
+  }
   return {
     charBox: { position: 'absolute', left: 0, top: 0, width: size, height: size },
     spinOrigin: ['50%', `${(centreY / size) * 100}%`, 0],
-    groundOrigin: ['50%', '94.5%', 0],
+    groundOrigin: ORIGIN_FIGURE_GROUND,
+    fit: {
+      hull: hullOf(outline),
+      gx: size / 2,
+      gy: size * (GROUND_PCT / 100),
+      px: size / 2,
+      py: centreY,
+      ox: 0,
+      oy: 0,
+      size,
+      twirlR: size * 0.07,
+    },
     shadow: shadowGeometry(size / 2, size * 0.955, size * 0.46, Math.max(3, size * 0.06)),
     glow: glowGeometry(size / 2, centreY, size * 0.76, size * 0.78),
     centreX: size / 2,
@@ -560,14 +805,17 @@ function playTrick(trick, run, parts, geo, size) {
       happy(420);
       parts.push(tada(geo, size, 560));
       break;
-    case 'spin':
+    case 'spin': {
+      // fitTravel lifts the turn over its own outline; this hop rides on top.
+      const up = Math.min(size * 0.06, geo.room.turnHop);
       run('spin', withSequence(to(360, 700, EASE.inOut), snap(0)));
-      run('hopY', withSequence(to(-size * 0.06, 350, EASE.out), to(0, 350, EASE.in)));
+      run('hopY', withSequence(to(-up, 350, EASE.out), to(0, 350, EASE.in)));
       run('sqY', withSequence(withDelay(700, to(0.92, 70)), springTo(1, 240, 0.45)));
       run('sqX', withSequence(withDelay(700, to(1.06, 70)), springTo(1, 240, 0.45)));
       happy(560);
       parts.push(tada(geo, size, 680));
       break;
+    }
     case 'bounce': {
       const up = -size * 0.1;
       run(
@@ -632,11 +880,10 @@ function playTrick(trick, run, parts, geo, size) {
       happy(660);
       parts.push(tada(geo, size, 760));
       break;
-    case 'flip':
-      run(
-        'hopY',
-        withSequence(withDelay(100, to(-size * 0.28, 320, EASE.out)), to(0, 280, EASE.in))
-      );
+    case 'flip': {
+      // Bigger stages fill more of the box, so their flip is more of a tumble.
+      const up = Math.min(size * 0.28, jumpRoom(geo), geo.room.turnHop);
+      run('hopY', withSequence(withDelay(100, to(-up, 320, EASE.out)), to(0, 280, EASE.in)));
       run('spin', withSequence(withDelay(150, to(360, 500, EASE.inOut)), snap(0)));
       run(
         'sqY',
@@ -661,6 +908,7 @@ function playTrick(trick, run, parts, geo, size) {
       happy(560);
       parts.push(tada(geo, size, 720));
       break;
+    }
     case 'dance': {
       const up = -size * 0.07;
       const beat = () => [to(up, 110, EASE.out), to(0, 140, EASE.in)];
@@ -672,7 +920,9 @@ function playTrick(trick, run, parts, geo, size) {
       parts.push(tada(geo, size, 780));
       break;
     }
-    case 'stretch':
+    case 'stretch': {
+      // Never wider than the box (the adult nearly fills it already).
+      const wide = Math.min(1.16, size / (geo.room.width * DEEP_BREATH));
       run(
         'sqY',
         withSequence(
@@ -685,17 +935,21 @@ function playTrick(trick, run, parts, geo, size) {
         'sqX',
         withSequence(
           to(0.86, 300),
-          withDelay(90, to(1.16, 300)),
+          withDelay(90, to(wide, 300)),
           withDelay(90, springTo(1, 260, 0.45))
         )
       );
       happy(820);
       parts.push(tada(geo, size, 760));
       break;
+    }
     case 'roll': {
-      const reach = size * 0.16;
+      // Rolls out clockwise and back counter-clockwise, like a ball would;
+      // fitTravel lifts it over its own outline as it turns. A turning figure
+      // reaches as far on every side, so the slide is capped by that reach
+      // (the adult fills its box and rolls on the spot).
+      const reach = Math.min(size * 0.16, geo.room.turnSlide);
       run('slideX', withSequence(to(reach, 480, EASE.inOut), to(0, 480, EASE.inOut)));
-      // Rolls out clockwise and back counter-clockwise, like a ball would.
       run('spin', withSequence(to(360, 480, EASE.inOut), to(0, 480, EASE.inOut)));
       happy(800);
       parts.push(tada(geo, size, 760));
@@ -722,7 +976,10 @@ function playTrick(trick, run, parts, geo, size) {
       // A high jump: crouch, stretch on take-off, squash on landing.
       run(
         'hopY',
-        withSequence(withDelay(120, to(-size * 0.32, 300, EASE.out)), to(0, 260, EASE.in))
+        withSequence(
+          withDelay(120, to(-Math.min(size * 0.32, jumpRoom(geo)), 300, EASE.out)),
+          to(0, 260, EASE.in)
+        )
       );
       run(
         'sqY',
@@ -869,7 +1126,8 @@ function playAction(act, { ch, geo, size, reduced, isEgg }) {
         springTo(1, 300, 0.4)
       )
     );
-    run('hopY', withSequence(withDelay(110, to(-size * 0.2, 230, EASE.out)), to(0, 210, EASE.in)));
+    const up = Math.min(size * 0.2, jumpRoom(geo));
+    run('hopY', withSequence(withDelay(110, to(-up, 230, EASE.out)), to(0, 210, EASE.in)));
     run('actHappy', withSequence(withDelay(100, to(1, 120)), withDelay(650, to(0, 160))));
     parts.push(
       ...sparkleRing(geo.centreX, geo.bodyCentreY, 6, size * 0.22, size * 0.44, 540, 560, size, {
@@ -1157,7 +1415,7 @@ const Mouth = memo(function Mouth({ mouth, mood, ink, tongue, actMouth }) {
  * The hatched figure. `entrance` is read once, at mount: 'hatch' pops it in from
  * 0.3 as the shell splits, 'grow' gives a small pop after a stage change.
  */
-const PetFigure = memo(function PetFigure({ geo, palette, stage, mood, face, entrance, reduced }) {
+const PetFigure = memo(function PetFigure({ geo, palette, mood, face, entrance, reduced }) {
   const [enter] = useState(entrance);
   const pop = useSharedValue(reduced || !enter ? 1 : enter === 'hatch' ? 0.3 : 0.84);
   const fade = useSharedValue(enter === 'hatch' ? 0 : 1);
@@ -1181,9 +1439,7 @@ const PetFigure = memo(function PetFigure({ geo, palette, stage, mood, face, ent
   }));
 
   const cheek = CHEEK_LEVEL[mood];
-  const hasSprout = stage === 'baby' || stage === 'kid';
-  const hasEars = stage !== 'baby';
-  const hasTail = stage === 'teen' || stage === 'adult';
+  const { sprout: hasSprout, ears: hasEars, tail: hasTail, tuft: hasTuft } = geo.parts;
   return (
     <Animated.View style={[StyleSheet.absoluteFill, styles.originFigure, popStyle]}>
       {/* Parts drawn before the body tuck behind it. */}
@@ -1208,7 +1464,7 @@ const PetFigure = memo(function PetFigure({ geo, palette, stage, mood, face, ent
           <View style={[geo.sprout.front, { backgroundColor: LEAF }]} />
         </>
       ) : null}
-      {stage === 'adult'
+      {hasTuft
         ? geo.tuft.map((tuft, i) => (
             <View key={i} style={[tuft, { backgroundColor: palette.top }]} />
           ))
@@ -1286,12 +1542,13 @@ const ThoughtBubble = memo(function ThoughtBubble({ bubble, reduced }) {
     show.value = loopN(withSequence(withDelay(5500, to(1, 250)), withDelay(1000, to(0, 250))));
     return () => cancelAnimation(show);
   }, [show]);
+  const rise = bubble.rise;
   const style = useAnimatedStyle(() => {
     const v = show.value;
     const m = reduced ? 0 : 1;
     return {
       opacity: v,
-      transform: [{ translateY: m * (1 - v) * 4 }, { scale: 1 - m * 0.3 * (1 - v) }],
+      transform: [{ translateY: m * (1 - v) * rise }, { scale: 1 - m * 0.3 * (1 - v) }],
     };
   });
   return (
@@ -1412,7 +1669,11 @@ function PetAvatar({
   const st = PET_STAGES.includes(stage) ? stage : 'baby';
   const md = PET_MOODS.includes(mood) ? mood : 'fed';
   const isEgg = st === 'egg';
-  const palette = PET_PALETTES[color] || PET_PALETTES[DEFAULT_PET_COLOR];
+  // An own-key check, so inherited names such as 'constructor' fall back too.
+  const palette =
+    PET_PALETTES[
+      Object.prototype.hasOwnProperty.call(PET_PALETTES, color) ? color : DEFAULT_PET_COLOR
+    ];
   const egg = useMemo(() => eggGeometry(box), [box]);
   const geo = useMemo(
     () => (isEgg ? eggStageGeometry(box, egg) : figureGeometry(box, st)),
@@ -1528,10 +1789,19 @@ function PetAvatar({
     []
   );
   const spawn = useCallback((specs) => {
-    if (specs.length === 0) return;
-    const added = specs.map((spec) => ({ ...spec, id: nextParticleId.current++ }));
+    const now = Date.now();
+    const added = specs.map((spec) => ({
+      ...spec,
+      id: nextParticleId.current++,
+      startAt: now + spec.delay,
+    }));
     setParticles((list) => {
-      const all = list.concat(added);
+      // A new action also drops the earlier action's particles that have not
+      // started yet, so they do not burst in the middle of it. Unmounting one
+      // cancels its animation, and its removal then finds nothing to remove.
+      const kept = list.filter((p) => p.startAt <= now);
+      if (added.length === 0 && kept.length === list.length) return list;
+      const all = kept.concat(added);
       return all.length > MAX_PARTICLES ? all.slice(all.length - MAX_PARTICLES) : all;
     });
   }, []);
@@ -1547,17 +1817,23 @@ function PetAvatar({
       isEgg || reduced
         ? toN(0, 200)
         : withSequence(to(0, 200), withRepeat(to(1, napping ? 1800 : 1200), -1, true));
+    // Opens the eyes before the loop: this effect re-runs on every mood change
+    // (peckish -> fed when a snack is eaten), and a loop that opened straight
+    // into its first delay would hold a cancelled mid-blink squint for 3.2 s.
     blink.value = awake
-      ? loopN(
-          withSequence(
-            withDelay(3200, to(0.1, 60)),
-            withDelay(40, to(1, 80)),
-            withDelay(3600, to(0.1, 60)),
-            withDelay(40, to(1, 80)),
-            withDelay(2600, to(0.1, 55)),
-            withDelay(30, to(1, 70)),
-            withDelay(120, to(0.1, 55)),
-            withDelay(30, to(1, 80))
+      ? seqN(
+          toN(1, 80),
+          loopN(
+            withSequence(
+              withDelay(3200, to(0.1, 60)),
+              withDelay(40, to(1, 80)),
+              withDelay(3600, to(0.1, 60)),
+              withDelay(40, to(1, 80)),
+              withDelay(2600, to(0.1, 55)),
+              withDelay(30, to(1, 70)),
+              withDelay(120, to(0.1, 55)),
+              withDelay(30, to(1, 80))
+            )
           )
         )
       : toN(1, 120);
@@ -1603,41 +1879,62 @@ function PetAvatar({
     [ch]
   );
 
-  const twirlR = box * 0.07;
+  const fit = geo.fit;
   const liftRef = box * 0.3;
   const breathAmp = md === 'napping' ? 0.05 : 0.035;
-  // Layer A: travel (hops, slides, the twirl circle).
+  // Layer A: travel (hops, slides, the twirl circle), fitted inside the box by
+  // fitTravel. It sizes the pose at full breath, so it need not re-run on
+  // every breathing frame.
   const travelStyle = useAnimatedStyle(() => {
-    const a = twirl.value * Math.PI * 2;
-    return {
-      transform: [
-        { translateX: slideX.value + twirlR * Math.sin(a) },
-        { translateY: hopY.value - twirlR * (1 - Math.cos(a)) },
-      ],
-    };
+    const [r, sx, sy] = bodyPose(
+      tilt.value,
+      sway.value,
+      sqX.value,
+      sqY.value,
+      pulse.value,
+      1,
+      breathAmp
+    );
+    const [x, y] = fitTravel(fit, twirl.value, slideX.value, hopY.value, spin.value, r, sx, sy);
+    return { transform: [{ translateX: x }, { translateY: y }] };
   });
   // Layer B: spins, around the middle of the body.
   const spinStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value}deg` }] }));
   // Layer C: tilt, squash-and-stretch, breathing and the pulse, anchored on the ground.
   const bodyStyle = useAnimatedStyle(() => {
-    const b = breath.value;
-    const grow = 1 + 0.045 * pulse.value;
-    return {
-      transform: [
-        { rotate: `${tilt.value + sway.value * 3}deg` },
-        { scaleX: sqX.value * (1 + breathAmp * 0.5 * b) * grow },
-        { scaleY: sqY.value * (1 + breathAmp * b) * grow },
-      ],
-    };
+    const [r, sx, sy] = bodyPose(
+      tilt.value,
+      sway.value,
+      sqX.value,
+      sqY.value,
+      pulse.value,
+      breath.value,
+      breathAmp
+    );
+    return { transform: [{ rotate: `${r}deg` }, { scaleX: sx }, { scaleY: sy }] };
   });
   const shadowStyle = useAnimatedStyle(() => {
-    const a = twirl.value * Math.PI * 2;
-    const height = Math.max(0, -(hopY.value - twirlR * (1 - Math.cos(a))));
-    const k = 1 - Math.min(1, height / liftRef) * 0.55;
-    return {
-      opacity: 0.4 + 0.6 * k,
-      transform: [{ translateX: slideX.value + twirlR * Math.sin(a) }, { scale: k }],
-    };
+    const [r, sx, sy] = bodyPose(
+      tilt.value,
+      sway.value,
+      sqX.value,
+      sqY.value,
+      pulse.value,
+      1,
+      breathAmp
+    );
+    const [x, , height] = fitTravel(
+      fit,
+      twirl.value,
+      slideX.value,
+      hopY.value,
+      spin.value,
+      r,
+      sx,
+      sy
+    );
+    const k = 1 - Math.min(1, Math.max(0, height) / liftRef) * 0.55;
+    return { opacity: 0.4 + 0.6 * k, transform: [{ translateX: x }, { scale: k }] };
   });
   const glowStyle = useAnimatedStyle(() => ({ opacity: 0.55 * pulse.value }));
 
@@ -1665,7 +1962,6 @@ function PetAvatar({
                 key={track.figureKey}
                 geo={geo}
                 palette={palette}
-                stage={st}
                 mood={md}
                 face={face}
                 entrance={track.entrance}
@@ -1715,36 +2011,30 @@ function PetAvatar({
     </>
   );
 
-  const boxStyle = [styles.box, { width: box, height: box }];
-  const label = accessibilityLabel || (isEgg ? 'Pet egg' : `Pet, ${MOOD_WORDS[md]}`);
-  if (onPress) {
-    return (
-      <Pressable
-        onPress={onPress}
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        style={boxStyle}
-      >
-        {content}
-      </Pressable>
-    );
-  }
-  if (accessibilityLabel) {
-    return (
-      <View accessible accessibilityRole="image" accessibilityLabel={label} style={boxStyle}>
-        {content}
-      </View>
-    );
-  }
+  const pressable = typeof onPress === 'function';
   // Without a label or a tap handler the pet is decoration: keep it out of VoiceOver.
+  const announced = pressable || !!accessibilityLabel;
+  const label = accessibilityLabel || (isEgg ? 'Pet egg' : `Pet, ${MOOD_WORDS[md]}`);
+  let role;
+  if (pressable) role = 'button';
+  else if (announced) role = 'image';
+  // Always the same root element, so gaining or losing `onPress` never remounts
+  // the pet and restarts its animations. Without a handler it takes no touches
+  // (pointerEvents rather than `disabled`, which VoiceOver would read as "dimmed").
   return (
-    <View
-      style={boxStyle}
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
+    <Pressable
+      onPress={pressable ? onPress : undefined}
+      pointerEvents={pressable ? 'auto' : 'none'}
+      focusable={pressable}
+      accessible={announced}
+      accessibilityRole={role}
+      accessibilityLabel={announced ? label : undefined}
+      accessibilityElementsHidden={!announced}
+      importantForAccessibility={announced ? 'auto' : 'no-hide-descendants'}
+      style={[styles.box, { width: box, height: box }]}
     >
       {content}
-    </View>
+    </Pressable>
   );
 }
 
@@ -1815,4 +2105,7 @@ const styles = StyleSheet.create({
   },
 });
 
+// memo skips a render only when every prop is unchanged, so it helps only
+// callers that pass a stable `onPress`: an inline arrow re-renders the pet with
+// its parent (cheap, as the inner parts are memoized themselves).
 export default memo(PetAvatar);

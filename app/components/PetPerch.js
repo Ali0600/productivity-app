@@ -1,10 +1,9 @@
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeOut, ZoomIn } from 'react-native-reanimated';
 import PetAvatar from './pet/PetAvatar';
-import { tapReaction } from './PetCard';
+import { usePetTap } from './PetCard';
 import { usePet, useWakeOnView } from '../hooks/usePet';
 import { usePetReactions } from '../hooks/usePetReactions';
-import { tapLight } from '../services/haptics';
 import { petDisplayName } from '../utils/pet';
 
 export const PERCH_SIZE = 58;
@@ -41,6 +40,7 @@ const PetBubble = ({ text }) => (
 function PetPerch() {
   const { visible, pet, view } = usePet();
   const { action, message, play } = usePetReactions(visible);
+  const onPetPress = usePetTap(view, play);
   // iOS often resumes the app straight into a list, so this pet wakes too.
   useWakeOnView(visible);
   if (!visible || !view) return null;
@@ -54,10 +54,7 @@ function PetPerch() {
         mood={view.mood}
         color={pet.color}
         action={action}
-        onPress={() => {
-          tapLight();
-          play(tapReaction(view));
-        }}
+        onPress={onPetPress}
         accessibilityLabel={`${petDisplayName(pet)}. ${view.line} Tap to play.`}
       />
     </View>

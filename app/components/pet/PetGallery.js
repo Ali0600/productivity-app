@@ -1,15 +1,21 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useReducedMotion } from 'react-native-reanimated';
-import PetAvatar, { PET_MOODS, PET_STAGES, PET_TRICKS } from './PetAvatar';
+import PetAvatar, { PET_ACTION_TYPES, PET_MOODS, PET_STAGES, PET_TRICKS } from './PetAvatar';
 import PetRoom from './PetRoom';
 import { DEFAULT_PET_COLOR, PET_PALETTES, ROOM_THEMES } from './petTheme';
 
 const COLORS = Object.keys(PET_PALETTES);
 const ROOMS = Object.keys(ROOM_THEMES);
-const ACTIONS = ['eat', 'pet', 'cheer', 'wake', 'hatch'];
+// Derived, so a new action type gets a button; tricks have their own row.
+const ACTIONS = PET_ACTION_TYPES.filter((type) => type !== 'trick');
 const SNACKS = ['🍓', '🍙', '🍪', '🧁', '🫐', '🍑'];
 const GRID_SIZE = 72;
+// The sizes the pet must look right at; the smallest are where the size floors
+// (minimum line widths, particle fonts, the second eye sparkle) take over.
+const SPEC_SIZES = [48, 56, 120, 170];
+// Names that must fall back to the defaults, including inherited object keys.
+const BAD_KEYS = ['nope', 'constructor', 'toString'];
 
 const Section = ({ title, children }) => (
   <View style={styles.section}>
@@ -109,11 +115,43 @@ function Gallery() {
         ))}
       </Section>
 
+      <Section title="Sizes (fed)">
+        {PET_STAGES.map((s) => (
+          <View key={s} style={styles.gridBlock}>
+            <Text style={styles.rowLabel}>{s}</Text>
+            <View style={[styles.wrapRow, styles.bottomRow]}>
+              {SPEC_SIZES.map((px) => (
+                <Cell key={px} caption={`${px}`}>
+                  <PetAvatar size={px} stage={s} mood="fed" color={DEFAULT_PET_COLOR} />
+                </Cell>
+              ))}
+            </View>
+          </View>
+        ))}
+      </Section>
+
       <Section title="Colours (kid, fed)">
         <View style={styles.wrapRow}>
           {COLORS.map((c) => (
             <Cell key={c} caption={c}>
               <PetAvatar size={GRID_SIZE} stage="kid" mood="fed" color={c} />
+            </Cell>
+          ))}
+        </View>
+      </Section>
+
+      <Section title="Fallbacks (default colour, Nursery room)">
+        <View style={styles.wrapRow}>
+          {BAD_KEYS.map((key) => (
+            <Cell key={`colour-${key}`} caption={`colour "${key}"`}>
+              <PetAvatar size={GRID_SIZE} stage="kid" mood="fed" color={key} />
+            </Cell>
+          ))}
+          {BAD_KEYS.map((key) => (
+            <Cell key={`room-${key}`} caption={`room "${key}"`}>
+              <PetRoom theme={key} style={styles.smallRoom}>
+                <PetAvatar size={64} stage="kid" mood="fed" color={color} />
+              </PetRoom>
             </Cell>
           ))}
         </View>
@@ -162,6 +200,7 @@ function Gallery() {
           {PET_TRICKS.map((t) => (
             <GalleryButton key={t} label={t} onPress={() => fire('trick', { trick: t })} />
           ))}
+          <GalleryButton label="nope (→ hop)" onPress={() => fire('trick', { trick: 'nope' })} />
         </View>
 
         <ChipRow label="Stage" options={PET_STAGES} value={stage} onChange={setStage} />
@@ -227,6 +266,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  // Mixed sizes stand on one baseline, as they would in the app.
+  bottomRow: {
+    alignItems: 'flex-end',
   },
   cell: {
     alignItems: 'center',
