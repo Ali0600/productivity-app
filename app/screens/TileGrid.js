@@ -14,6 +14,8 @@ import {
 import { SymbolView } from 'expo-symbols';
 import Tile from '../components/Tile';
 import GlassCard from '../components/GlassCard';
+import PetCard from '../components/PetCard';
+import PetModal from '../components/modals/PetModal';
 import { useMainLists, useAppLoading } from '../hooks/useAppState';
 import { tapLight } from '../services/haptics';
 import { computeStreak } from '../utils/streaks';
@@ -33,6 +35,7 @@ function TileGrid() {
 
   const [addVisible, setAddVisible] = useState(false);
   const [newName, setNewName] = useState('');
+  const [petVisible, setPetVisible] = useState(false);
 
   const hero = mainLists[0];
   const rest = mainLists.slice(1);
@@ -81,6 +84,8 @@ function TileGrid() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scrollContent}>
+          <PetCard style={styles.petItem} onOpen={() => setPetVisible(true)} />
+
           {hero && (
             <View style={styles.heroItem}>
               <Tile
@@ -143,6 +148,8 @@ function TileGrid() {
           </GlassCard>
         </View>
       </Modal>
+
+      <PetModal visible={petVisible} onClose={() => setPetVisible(false)} />
     </SafeAreaView>
   );
 }
@@ -178,6 +185,9 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: GAP,
     paddingBottom: 40,
+  },
+  petItem: {
+    padding: GAP,
   },
   heroItem: {
     width: '100%',
